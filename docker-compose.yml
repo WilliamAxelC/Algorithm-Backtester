@@ -1,0 +1,9 @@
+services:
+  wyckoff-quant:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: wyckoff-quant:latest
+    container_name: wyckoff-quant-app
+    restart: unless-stopped
+    network_mode: host
