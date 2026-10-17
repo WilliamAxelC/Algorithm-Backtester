@@ -7,12 +7,13 @@
 | Phase 3 | HNTUSDTPERP Wyckoff Schematics #1 & #2 Fixtures and CSV Loader | `feat/phase-3-market-data` | COMPLETED | `npx tsc --noEmit` | Deterministic fixture & CSV parser |
 | Phase 4 | Event-Driven Backtesting Engine, Portfolio Tracker & Metrics Calculator | `feat/phase-4-backtest-engine` | COMPLETED | `npx tsc --noEmit` | Zero look-ahead backtest engine |
 | Phase 5 | Strategy Registry, Wyckoff Accumulation Schematics #2 Algorithm & Donchian Breakout Strategy | `feat/phase-5-strategies` | COMPLETED | `npx tsc --noEmit` | Schematics #1 & #2 state machine & registry |
-| Phase 6 | Automated Verification Suite (Engine & Wyckoff Schematics #1 & #2 Tests) | `feat/phase-6-unit-tests` | IN_PROGRESS | `npx vitest run` | Unit test suite |
-| Phase 7 | Swiss Quantitative Light-Mode UI Components | `feat/phase-7-ui-components` | PENDING | `npx tsc --noEmit` | TopBar, StrategyInspector, MetricsStrip |
+| Phase 6 | Automated Verification Suite (Engine & Wyckoff Schematics #1 & #2 Tests) | `feat/phase-6-unit-tests` | COMPLETED | `npx vitest run` | Unit test suite |
+| Phase 7 | Swiss Quantitative Light-Mode UI Components | `feat/phase-7-ui-components` | IN_PROGRESS | `npx tsc --noEmit` | TopBar, StrategyInspector, MetricsStrip |
 | Phase 8 | Interactive Financial Chart Canvas, Bottom Ledger & Application Wiring | `feat/phase-8-chart-and-app` | PENDING | `npm run build && npx vitest run` | lightweight-charts, ledger, app assembly |
 
-Current Active Phase: Phase 6
-Last Updated: Phase 5 merged into main
+Current Active Phase: Phase 7
+Last Updated: Phase 6 merged into main
+
 
 
 
