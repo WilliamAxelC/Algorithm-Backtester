@@ -1,14 +1,19 @@
 import type { IStrategy } from '../types/strategy';
 import { WyckoffAccumulationV2Strategy } from './wyckoff-accumulation-v2';
-import { DonchianBreakoutStrategy } from './donchian-breakout';
+import {
+  DonchianTrendStrategy,
+  DonchianBreakoutStrategy,
+} from './donchian-trend';
+import { RsiMeanReversionStrategy } from './rsi-mean-reversion';
 
 export class StrategyRegistry {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  private readonly strategies = new Map<string, IStrategy<any>>();
+  private readonly strategies = new Map<string, IStrategy<unknown>>();
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  public register(strategy: IStrategy<any>): void {
-    this.strategies.set(strategy.id, strategy);
+  public register<TState = unknown>(strategy: IStrategy<TState>): void {
+    this.strategies.set(
+      strategy.id,
+      strategy as unknown as IStrategy<unknown>
+    );
   }
 
   public getById(id: string): IStrategy<unknown> {
@@ -16,14 +21,16 @@ export class StrategyRegistry {
     if (!strategy) {
       throw new Error(`STRATEGY_NOT_FOUND: ${id}`);
     }
-    return strategy as IStrategy<unknown>;
+    return strategy;
   }
 
   public listAll(): readonly IStrategy<unknown>[] {
-    return Array.from(this.strategies.values()) as readonly IStrategy<unknown>[];
+    return Array.from(this.strategies.values());
   }
 }
 
 export const strategyRegistry = new StrategyRegistry();
 strategyRegistry.register(WyckoffAccumulationV2Strategy);
+strategyRegistry.register(DonchianTrendStrategy);
+strategyRegistry.register(RsiMeanReversionStrategy);
 strategyRegistry.register(DonchianBreakoutStrategy);

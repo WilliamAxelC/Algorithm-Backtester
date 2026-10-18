@@ -7,8 +7,8 @@ import type {
 import type {
   IStrategy,
   OrderAction,
+  RiskPosture,
   StrategyContext,
-  StrategyParameterMap,
   StrategyParameterSchema,
   StrategyStepOutput,
 } from '../types/strategy';
@@ -66,7 +66,8 @@ const WYCKOFF_PARAMETERS: readonly StrategyParameterSchema[] = [
   {
     key: 'schematicMode',
     label: 'Schematic Mode',
-    description: 'Trading schematic variant: BOTH, SCHEMATIC_1_ONLY (Spring), or SCHEMATIC_2_ONLY (Higher-Low LPS)',
+    description:
+      'Trading schematic variant: BOTH, SCHEMATIC_1_ONLY (Spring), or SCHEMATIC_2_ONLY (Higher-Low LPS)',
     type: 'select',
     defaultValue: 'BOTH',
     options: [
@@ -78,7 +79,8 @@ const WYCKOFF_PARAMETERS: readonly StrategyParameterSchema[] = [
   {
     key: 'scVolumeMultiplier',
     label: 'SC Volume Multiplier',
-    description: 'Volume multiplier threshold relative to 20-bar baseline for Selling Climax detection',
+    description:
+      'Volume multiplier threshold relative to 20-bar baseline for Selling Climax detection',
     type: 'number',
     defaultValue: 1.75,
     min: 1.2,
@@ -88,9 +90,10 @@ const WYCKOFF_PARAMETERS: readonly StrategyParameterSchema[] = [
   {
     key: 'minPhaseBBars',
     label: 'Min Phase B Bars',
-    description: 'Minimum duration in bars of trading range consolidation in Phase B before Phase C activation',
+    description:
+      'Minimum duration in bars of trading range consolidation in Phase B before Phase C activation',
     type: 'number',
-    defaultValue: 12,
+    defaultValue: 10,
     min: 6,
     max: 40,
     step: 1,
@@ -98,7 +101,8 @@ const WYCKOFF_PARAMETERS: readonly StrategyParameterSchema[] = [
   {
     key: 'lpsMaxVolRatio',
     label: 'LPS Max Volume Ratio',
-    description: 'Maximum volume ratio allowed on Last Point of Support pullbacks in Phase C and D',
+    description:
+      'Maximum volume ratio allowed on Last Point of Support pullbacks in Phase C and D',
     type: 'number',
     defaultValue: 0.95,
     min: 0.5,
@@ -108,9 +112,10 @@ const WYCKOFF_PARAMETERS: readonly StrategyParameterSchema[] = [
   {
     key: 'atrStopMultiplier',
     label: 'ATR Stop Multiplier',
-    description: 'Multiplier for dynamic ATR trailing stop-loss during Phase E markup',
+    description:
+      'Multiplier for dynamic ATR trailing stop-loss during Phase E markup',
     type: 'number',
-    defaultValue: 2.0,
+    defaultValue: 1.8,
     min: 1.0,
     max: 4.0,
     step: 0.25,
@@ -124,7 +129,10 @@ const WYCKOFF_PARAMETERS: readonly StrategyParameterSchema[] = [
   },
 ];
 
-function initWyckoffState(_parameters: StrategyParameterMap): WyckoffInternalState {
+export function initWyckoffState(
+  _riskPostureOrParams?: unknown,
+  _asset?: unknown
+): WyckoffInternalState {
   return {
     currentPhase: 'NONE',
     psDetected: false,
@@ -161,28 +169,77 @@ function initWyckoffState(_parameters: StrategyParameterMap): WyckoffInternalSta
   };
 }
 
-function evaluateWyckoffBar(
+export function evaluateWyckoffBar(
   context: StrategyContext,
   state: WyckoffInternalState
 ): { readonly nextState: WyckoffInternalState; readonly output: StrategyStepOutput } {
+  // Self-calibrates based on riskPosture:
+  // - CONSERVATIVE: SC volume multiplier 2.2, minPhaseBBars 12, max allocation 0.60, ATR stop mult 2.2
+  // - BALANCED: SC volume multiplier 1.75, minPhaseBBars 10, max allocation 0.85, ATR stop mult 1.8
+  // - AGGRESSIVE: SC volume multiplier 1.4, minPhaseBBars 6, max allocation 0.98, ATR stop mult 1.5, pyramiding allowed
+  const posture: RiskPosture =
+    context.riskPosture ??
+    (context.parameters.riskPosture === 'CONSERVATIVE' ||
+    context.parameters.riskPosture === 'AGGRESSIVE' ||
+    context.parameters.riskPosture === 'BALANCED'
+      ? context.parameters.riskPosture
+      : 'BALANCED');
+
+  let baseScVolMult = 1.75;
+  let baseMinPhaseB = 10;
+  let baseMaxAllocation = 0.85;
+  let baseAtrStopMult = 1.8;
+  let basePyramiding = false;
+
+  if (posture === 'CONSERVATIVE') {
+    baseScVolMult = 2.2;
+    baseMinPhaseB = 12;
+    baseMaxAllocation = 0.60;
+    baseAtrStopMult = 2.2;
+    basePyramiding = false;
+  } else if (posture === 'AGGRESSIVE') {
+    baseScVolMult = 1.4;
+    baseMinPhaseB = 6;
+    baseMaxAllocation = 0.98;
+    baseAtrStopMult = 1.5;
+    basePyramiding = true;
+  } else {
+    // BALANCED
+    baseScVolMult = 1.75;
+    baseMinPhaseB = 10;
+    baseMaxAllocation = 0.85;
+    baseAtrStopMult = 1.8;
+    basePyramiding = false;
+  }
+
   const params = context.parameters;
   const schematicModeParam = params.schematicMode;
-  const schematicMode = typeof schematicModeParam === 'string' ? schematicModeParam : 'BOTH';
+  const schematicMode =
+    typeof schematicModeParam === 'string' ? schematicModeParam : 'BOTH';
 
-  const scVolParam = params.scVolumeMultiplier;
-  const scVolumeMultiplier = typeof scVolParam === 'number' ? scVolParam : 1.75;
+  const scVolParam = params.scVolumeMultiplier ?? params.scVolMultiplier;
+  const scVolumeMultiplier =
+    typeof scVolParam === 'number' ? scVolParam : baseScVolMult;
 
   const minPhaseBParam = params.minPhaseBBars;
-  const minPhaseBBars = typeof minPhaseBParam === 'number' ? minPhaseBParam : 12;
+  const minPhaseBBars =
+    typeof minPhaseBParam === 'number' ? minPhaseBParam : baseMinPhaseB;
 
   const lpsMaxVolParam = params.lpsMaxVolRatio;
-  const lpsMaxVolRatio = typeof lpsMaxVolParam === 'number' ? lpsMaxVolParam : 0.95;
+  const lpsMaxVolRatio =
+    typeof lpsMaxVolParam === 'number' ? lpsMaxVolParam : 0.95;
 
-  const atrStopParam = params.atrStopMultiplier;
-  const atrStopMultiplier = typeof atrStopParam === 'number' ? atrStopParam : 2.0;
+  const atrStopParam = params.atrStopMultiplier ?? params.atrStopMult;
+  const atrStopMultiplier =
+    typeof atrStopParam === 'number' ? atrStopParam : baseAtrStopMult;
+
+  const maxAllocParam = params.maxAllocation ?? params.allocationPct;
+  const maxAllocation =
+    typeof maxAllocParam === 'number' ? maxAllocParam : baseMaxAllocation;
 
   const pyramidingParam = params.pyramidingEnabled;
-  const pyramidingEnabled = typeof pyramidingParam === 'boolean' ? pyramidingParam : true;
+  const pyramidingEnabled =
+    typeof pyramidingParam === 'boolean' ? pyramidingParam : basePyramiding;
 
   const currentBar = context.currentBar;
   const i = context.currentIndex;
@@ -251,14 +308,22 @@ function evaluateWyckoffBar(
           shape: 'circle',
           color: '#0F172A',
           label: 'PS',
+          plainEnglishStory: `Preliminary Support: high-volume selling absorbed at ${currentBar.low.toFixed(2)} signaling early institutional demand.`,
           rationale: `Preliminary Support: high-volume drop at ${currentBar.low.toFixed(2)}`,
         });
       }
     }
 
     const currentSpread = currentBar.high - currentBar.low;
-    const closeOffLowPct = currentSpread > 1e-6 ? (currentBar.close - currentBar.low) / currentSpread : 0;
-    if (volRatio >= scVolumeMultiplier && spreadRatio >= 1.3 && closeOffLowPct >= 0.25) {
+    const closeOffLowPct =
+      currentSpread > 1e-6
+        ? (currentBar.close - currentBar.low) / currentSpread
+        : 0;
+    if (
+      volRatio >= scVolumeMultiplier &&
+      spreadRatio >= 1.3 &&
+      closeOffLowPct >= 0.25
+    ) {
       scDetected = true;
       scIndex = i;
       scTime = currentBar.time;
@@ -276,6 +341,7 @@ function evaluateWyckoffBar(
         shape: 'arrowUp',
         color: '#E11D48',
         label: 'SC',
+        plainEnglishStory: `Selling Climax: climactic panic selling exhausts supply at ${currentBar.low.toFixed(2)}, setting the Trading Range support boundary.`,
         rationale: `Selling Climax: capitulation volume at ${currentBar.low.toFixed(2)} setting TR support`,
       });
     }
@@ -286,7 +352,11 @@ function evaluateWyckoffBar(
       candidateArIndex = i;
     }
     const rallyRange = candidateArHigh - supportPrice;
-    if (rallyRange >= 1.8 * atr && candidateArIndex !== null && i >= candidateArIndex + 1) {
+    if (
+      rallyRange >= 1.8 * atr &&
+      candidateArIndex !== null &&
+      i >= candidateArIndex + 1
+    ) {
       const priorClose = prevBar ? prevBar.close : currentBar.open;
       if (currentBar.close < priorClose) {
         arDetected = true;
@@ -304,6 +374,7 @@ function evaluateWyckoffBar(
             shape: 'circle',
             color: '#0D9488',
             label: 'AR',
+            plainEnglishStory: `Automatic Rally: aggressive short-covering rally tops at ${candidateArHigh.toFixed(2)}, establishing Trading Range resistance.`,
             rationale: `Automatic Rally: peak at ${candidateArHigh.toFixed(2)} setting TR resistance`,
           });
         }
@@ -311,7 +382,9 @@ function evaluateWyckoffBar(
     }
   } else if (!stDetected) {
     // 3. PHASE A: Secondary Test (ST)
-    const nearSupport = currentBar.low <= supportPrice + 0.85 * atr && currentBar.low >= supportPrice - 0.60 * atr;
+    const nearSupport =
+      currentBar.low <= supportPrice + 0.85 * atr &&
+      currentBar.low >= supportPrice - 0.6 * atr;
     const lowerSupply = spreadRatio < 1.0 && volRatio < 1.0;
     if (nearSupport && lowerSupply) {
       stDetected = true;
@@ -329,6 +402,7 @@ function evaluateWyckoffBar(
         shape: 'circle',
         color: '#D97706',
         label: 'ST',
+        plainEnglishStory: `Secondary Test: price tests Selling Climax support at ${currentBar.low.toFixed(2)} on dried-up supply and lower volume.`,
         rationale: `Secondary Test: test of support at ${currentBar.low.toFixed(2)} with reduced volume`,
       });
     }
@@ -337,7 +411,11 @@ function evaluateWyckoffBar(
     phaseBBarsCount += 1;
 
     // Upthrust (UT)
-    if (!utDetected && currentBar.high > resistancePrice && currentBar.close <= resistancePrice + 0.1 * atr) {
+    if (
+      !utDetected &&
+      currentBar.high > resistancePrice &&
+      currentBar.close <= resistancePrice + 0.1 * atr
+    ) {
       utDetected = true;
       markers.push({
         time: currentBar.time,
@@ -349,13 +427,16 @@ function evaluateWyckoffBar(
         shape: 'arrowDown',
         color: '#D97706',
         label: 'UT',
+        plainEnglishStory: `Upthrust in Phase B: temporary test above Trading Range resistance to ${currentBar.high.toFixed(2)} fails to find follow-through demand.`,
         rationale: `Upthrust in Phase B: brief poke to ${currentBar.high.toFixed(2)} above TR resistance`,
       });
     }
 
     const trMid = supportPrice + 0.5 * (resistancePrice - supportPrice);
     if (phaseBBarsCount >= minPhaseBBars) {
-      const isSupplyDrying = (currentBar.volume <= 0.20 * scVolume || volRatio <= 0.80) && currentBar.low <= trMid;
+      const isSupplyDrying =
+        (currentBar.volume <= 0.2 * scVolume || volRatio <= 0.8) &&
+        currentBar.low <= trMid;
       if (currentBar.low < supportPrice || isSupplyDrying) {
         nextPhase = 'PHASE_C';
       }
@@ -367,11 +448,12 @@ function evaluateWyckoffBar(
     const trMid = supportPrice + 0.5 * (resistancePrice - supportPrice);
 
     // Schematic #1: Spring
-    const allowSchematic1 = schematicMode === 'BOTH' || schematicMode === 'SCHEMATIC_1_ONLY';
+    const allowSchematic1 =
+      schematicMode === 'BOTH' || schematicMode === 'SCHEMATIC_1_ONLY';
     const isSpring =
       currentBar.low < supportPrice &&
       supportPrice - currentBar.low <= 1.5 * atr &&
-      currentBar.close >= supportPrice - 0.20 * atr &&
+      currentBar.close >= supportPrice - 0.2 * atr &&
       volRatio <= 1.6;
 
     if (allowSchematic1 && isSpring && !springDetected) {
@@ -379,7 +461,9 @@ function evaluateWyckoffBar(
       phaseCCompleted = true;
       nextPhase = 'PHASE_D';
       orderAction = 'ENTER_LONG';
-      allocationPct = 0.55;
+      allocationPct = pyramidingEnabled
+        ? Math.min(0.55, maxAllocation)
+        : maxAllocation;
       stopLossPrice = currentBar.low - 0.5 * atr;
       currentTrailingStop = stopLossPrice;
       reason = 'Wyckoff Schematic #1: Phase C Spring entry below TR support';
@@ -394,12 +478,14 @@ function evaluateWyckoffBar(
         shape: 'arrowUp',
         color: '#2563EB',
         label: 'SPRING',
+        plainEnglishStory: `Phase C Spring: shakeout dip below Trading Range support to ${currentBar.low.toFixed(2)} swiftly re-enters the range on institutional absorption.`,
         rationale: `Phase C Spring: shakeout at ${currentBar.low.toFixed(2)} with swift demand recovery`,
       });
     }
 
     // Schematic #2: Higher-Low LPS without Spring
-    const allowSchematic2 = schematicMode === 'BOTH' || schematicMode === 'SCHEMATIC_2_ONLY';
+    const allowSchematic2 =
+      schematicMode === 'BOTH' || schematicMode === 'SCHEMATIC_2_ONLY';
     if (allowSchematic2 && !phaseCCompleted && !springDetected) {
       const isHigherLowTest =
         currentBar.low > supportPrice &&
@@ -408,15 +494,26 @@ function evaluateWyckoffBar(
         volRatio <= lpsMaxVolRatio;
 
       if (isHigherLowTest) {
-        phaseCLpsCandidate = { low: currentBar.low, index: i, high: currentBar.high };
-      } else if (phaseCLpsCandidate !== null && i === phaseCLpsCandidate.index + 1) {
-        const isBullishDemand = currentBar.close > currentBar.open && currentBar.close > phaseCLpsCandidate.high;
+        phaseCLpsCandidate = {
+          low: currentBar.low,
+          index: i,
+          high: currentBar.high,
+        };
+      } else if (
+        phaseCLpsCandidate !== null &&
+        i === phaseCLpsCandidate.index + 1
+      ) {
+        const isBullishDemand =
+          currentBar.close > currentBar.open &&
+          currentBar.close > phaseCLpsCandidate.high;
         if (isBullishDemand) {
           phaseCLpsDetected = true;
           phaseCCompleted = true;
           nextPhase = 'PHASE_D';
           orderAction = 'ENTER_LONG';
-          allocationPct = 0.60;
+          allocationPct = pyramidingEnabled
+            ? Math.min(0.60, maxAllocation)
+            : maxAllocation;
           stopLossPrice = supportPrice - 0.5 * atr;
           currentTrailingStop = stopLossPrice;
           reason = 'Wyckoff Schematic #2: Phase C Higher-Low LPS entry';
@@ -431,6 +528,7 @@ function evaluateWyckoffBar(
             shape: 'arrowUp',
             color: '#0D9488',
             label: 'LPS',
+            plainEnglishStory: `Phase C Higher-Low Test: quiet volume test at ${phaseCLpsCandidate.low.toFixed(2)} confirms supply exhaustion without a spring (Schematic #2).`,
             rationale: `Phase C Higher-Low Test: dry volume test held at ${phaseCLpsCandidate.low.toFixed(2)} confirmed by demand bar`,
           });
         }
@@ -441,8 +539,12 @@ function evaluateWyckoffBar(
   // 6. PHASE D: Sign of Strength (SOS) & Last Point of Support (LPS) Scale-In
   if (nextPhase === 'PHASE_D') {
     if (!sosDetected) {
-      const bullishAdvance = currentBar.close > currentBar.open && (spreadRatio >= 1.15 || volRatio >= 1.20);
-      const reachingUpperOrAbove = currentBar.high >= resistancePrice || currentBar.close >= resistancePrice - 0.25 * atr;
+      const bullishAdvance =
+        currentBar.close > currentBar.open &&
+        (spreadRatio >= 1.15 || volRatio >= 1.2);
+      const reachingUpperOrAbove =
+        currentBar.high >= resistancePrice ||
+        currentBar.close >= resistancePrice - 0.25 * atr;
       if (bullishAdvance && reachingUpperOrAbove) {
         sosDetected = true;
         sosIndex = i;
@@ -457,20 +559,33 @@ function evaluateWyckoffBar(
           shape: 'arrowUp',
           color: '#0D9488',
           label: 'SOS',
+          plainEnglishStory: `Sign of Strength: wide-spread rally to ${currentBar.high.toFixed(2)} on surging volume pushes into or above resistance.`,
           rationale: `Sign of Strength: demand expansion to ${currentBar.high.toFixed(2)} breaking toward resistance`,
         });
       }
     } else if (!phaseDLpsDetected) {
-      const minHoldingLevel = supportPrice + 0.25 * (resistancePrice - supportPrice);
+      const minHoldingLevel =
+        supportPrice + 0.25 * (resistancePrice - supportPrice);
       const isQuietReaction =
         currentBar.low >= minHoldingLevel &&
         spreadRatio <= 0.95 &&
         volRatio <= lpsMaxVolRatio;
 
       if (isQuietReaction) {
-        phaseDLpsCandidate = { low: currentBar.low, index: i, high: currentBar.high };
-      } else if (phaseDLpsCandidate !== null && i >= phaseDLpsCandidate.index + 1 && i <= phaseDLpsCandidate.index + 3) {
-        if (currentBar.close > currentBar.open && currentBar.close > phaseDLpsCandidate.high) {
+        phaseDLpsCandidate = {
+          low: currentBar.low,
+          index: i,
+          high: currentBar.high,
+        };
+      } else if (
+        phaseDLpsCandidate !== null &&
+        i >= phaseDLpsCandidate.index + 1 &&
+        i <= phaseDLpsCandidate.index + 3
+      ) {
+        if (
+          currentBar.close > currentBar.open &&
+          currentBar.close > phaseDLpsCandidate.high
+        ) {
           phaseDLpsDetected = true;
           const newStop = phaseDLpsCandidate.low - 0.2 * atr;
           currentTrailingStop = Math.max(currentTrailingStop ?? 0, newStop);
@@ -486,16 +601,22 @@ function evaluateWyckoffBar(
             shape: 'arrowUp',
             color: '#0D9488',
             label: 'LPS',
+            plainEnglishStory: `Phase D LPS: orderly pullback finds support at ${phaseDLpsCandidate.low.toFixed(2)} on declining volume before continuation.`,
             rationale: `Phase D LPS: pullback held at ${phaseDLpsCandidate.low.toFixed(2)} confirmed by demand expansion`,
           });
 
           if (context.openPosition === null) {
             orderAction = 'ENTER_LONG';
-            allocationPct = 0.60;
+            allocationPct = pyramidingEnabled
+              ? Math.min(0.60, maxAllocation)
+              : maxAllocation;
             reason = 'Phase D LPS entry';
           } else if (pyramidingEnabled && !scaledIn) {
             orderAction = 'ADD_LONG';
-            allocationPct = 0.35;
+            allocationPct = Math.max(
+              0.05,
+              Math.min(0.35, maxAllocation - 0.6)
+            );
             scaledIn = true;
             reason = 'Phase D LPS scale-in pyramiding';
           }
@@ -515,6 +636,7 @@ function evaluateWyckoffBar(
           shape: 'arrowUp',
           color: '#0D9488',
           label: 'BU',
+          plainEnglishStory: `Phase E Back-Up / Breakout: decisive close at ${currentBar.close.toFixed(2)} above Trading Range confirms transition into markup trend.`,
           rationale: `Phase E Back-Up / Breakout: decisive close at ${currentBar.close.toFixed(2)} above TR`,
         });
         const phaseEStop = currentBar.close - atrStopMultiplier * atr;
@@ -596,9 +718,12 @@ function evaluateWyckoffBar(
 
 export const WyckoffAccumulationV2Strategy: IStrategy<WyckoffInternalState> = {
   id: 'wyckoff-accumulation-v2',
-  name: 'Wyckoff Accumulation Schematics #1 & #2',
-  version: '2.0.0',
+  name: 'Wyckoff Institutional Accumulation (Phase C/D/E)',
+  shortBadge: 'WYCKOFF #1 & #2',
   category: 'WYCKOFF_VSA',
+  plainEnglishSummary:
+    'Identifies institutional accumulation ranges (Schematic #1 Spring & Schematic #2 Higher-Low LPS). Buys Spring retests and Phase D Sign-of-Strength breakouts with trailing volatility stops.',
+  version: '2.0.0',
   description:
     'Quantitative Wyckoff Accumulation state machine tracking Phases A through E for Schematics #1 (Spring) and #2 (Higher-Low LPS) with dynamic ATR trailing stops.',
   parameters: WYCKOFF_PARAMETERS,
