@@ -1,23 +1,17 @@
-# MOA State Tracker: Wyckoff Quant Backtesting Framework
+# MOA Live Phase State Tracker
 
-| Phase | Description | Branch | Status | Verification Command | Notes |
+**Architecture Specification:** `docs/ARCHITECTURE.md`
+**Project:** Simplified Multi-Asset Modular Backtester (`wyckoff-quant-v2`)
+
+| Phase | Description | Branch | Status | Verification Command | Exit Code |
 |---|---|---|---|---|---|
-| Phase 1 | Disk Persistence, Project Scaffolding & Configuration | `feat/phase-1-scaffolding` | COMPLETED | `npm install` | Scaffolding configs, CSS, package.json |
-| Phase 2 | Core Domain Types & Quantitative Indicator Utilities | `feat/phase-2-types-indicators` | COMPLETED | `npx tsc --noEmit` | Types & indicator math functions |
-| Phase 3 | HNTUSDTPERP Wyckoff Schematics #1 & #2 Fixtures and CSV Loader | `feat/phase-3-market-data` | COMPLETED | `npx tsc --noEmit` | Deterministic fixture & CSV parser |
-| Phase 4 | Event-Driven Backtesting Engine, Portfolio Tracker & Metrics Calculator | `feat/phase-4-backtest-engine` | COMPLETED | `npx tsc --noEmit` | Zero look-ahead backtest engine |
-| Phase 5 | Strategy Registry, Wyckoff Accumulation Schematics #2 Algorithm & Donchian Breakout Strategy | `feat/phase-5-strategies` | COMPLETED | `npx tsc --noEmit` | Schematics #1 & #2 state machine & registry |
-| Phase 6 | Automated Verification Suite (Engine & Wyckoff Schematics #1 & #2 Tests) | `feat/phase-6-unit-tests` | COMPLETED | `npx vitest run` | Unit test suite |
-| Phase 7 | Swiss Quantitative Light-Mode UI Components | `feat/phase-7-ui-components` | COMPLETED | `npx tsc --noEmit` | TopBar, StrategyInspector, MetricsStrip |
-| Phase 8 | Interactive Financial Chart Canvas, Bottom Ledger & Application Wiring | `feat/phase-8-chart-and-app` | COMPLETED | `npm run build && npx vitest run` | lightweight-charts, ledger, app assembly |
+| Phase 1 | Disk Persistence, Project Scaffolding & Swiss Light-Mode Styling | `feat/phase-1-scaffolding` | PENDING | `npm install` | - |
+| Phase 2 | Core Domain Types, Quantitative Indicators & Currency/Date Formatters | `feat/phase-2-types-and-utils` | PENDING | `npx tsc --noEmit` | - |
+| Phase 3 | Liquid Asset Catalog (Crypto, IDX LQ45, US Equities), Time-Range Data Provider & CSV Loader | `feat/phase-3-assets-and-data` | PENDING | `npx tsc --noEmit` | - |
+| Phase 4 | Market-Aware Backtesting Engine, Lot-Size Portfolio Tracker & Benchmark/Monthly Metrics | `feat/phase-4-engine-and-metrics` | PENDING | `npx tsc --noEmit` | - |
+| Phase 5 | Self-Calibrating Modular Algorithms (Wyckoff #1 & #2, Donchian, RSI) & Registry | `feat/phase-5-modular-strategies` | PENDING | `npx tsc --noEmit` | - |
+| Phase 6 | Automated Verification Suite (Multi-Asset, LQ45 Lot Rounding, Time-Range & Wyckoff Tests) | `feat/phase-6-verification-tests` | PENDING | `npx vitest run` | - |
+| Phase 7 | Simplified Top Control Bar, Searchable Asset Modal (Crypto + LQ45), Comparator & Alpha Strip | `feat/phase-7-simplified-ui-controls` | PENDING | `npx tsc --noEmit` | - |
+| Phase 8 | Interactive Chart with Replay Scrubber, Monthly Heatmap, Story Log & App Assembly | `feat/phase-8-chart-replay-and-app` | PENDING | `npm run build && npx vitest run` | - |
 
-Current Active Phase: ALL_PHASES_COMPLETED
-Last Updated: Phase 8 merged into main. Complete test suite and production build passing.
-
-
-
-
-
-
-
-
+**Current Active Phase:** Phase 1
