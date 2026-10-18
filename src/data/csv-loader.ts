@@ -1,4 +1,4 @@
-import type { MarketDataset, OHLCVBar } from '../types/market';
+import type { AssetMetadata, MarketDataset, OHLCVBar } from '../types/market';
 
 const ERROR_MALFORMED =
   'INVALID_CSV: Requires timestamp/time, open, high, low, close, volume with >= 10 rows';
@@ -57,23 +57,13 @@ function parseNumber(raw: string | undefined): number | null {
 }
 
 /**
- * Parses and validates an OHLCV CSV string into an immutable MarketDataset.
- *
- * Supported headers (case-insensitive):
- * - Time: 'time', 'timestamp', 'date', 'datetime'
- * - Open: 'open'
- * - High: 'high'
- * - Low: 'low'
- * - Close: 'close'
- * - Volume: 'volume', 'vol'
- *
- * Automatically converts ISO-8601 dates or millisecond timestamps into Unix seconds,
- * sorts bars ascending by time, and enforces a minimum of 10 valid bars.
+ * Internal parsing core shared between parseCustomCsvDataset and parseOhlcvCsv.
  */
-export function parseOhlcvCsv(
+function parseCsvInternal(
   csvText: string,
   symbolName: string,
-  timeframe: string
+  timeframe: string,
+  currency: 'USD' | 'IDR'
 ): MarketDataset {
   const lines = csvText
     .split(/\r\n|\n|\r/)
@@ -203,11 +193,61 @@ export function parseOhlcvCsv(
   const slugSymbol = cleanSymbol.toLowerCase().replace(/[^a-z0-9_-]/g, '');
   const slugTimeframe = cleanTimeframe.toLowerCase().replace(/[^a-z0-9_-]/g, '');
 
+  const isIdr = currency === 'IDR';
+  const isCrypto =
+    !isIdr &&
+    (cleanSymbol.toUpperCase().includes('USDT') ||
+      cleanSymbol.toUpperCase().endsWith('PERP'));
+
+  const asset: AssetMetadata = {
+    symbol: cleanSymbol,
+    name: `${cleanSymbol} (Custom CSV)`,
+    assetClass: isIdr ? 'IDX_LQ45' : isCrypto ? 'CRYPTO' : 'US_EQUITY',
+    exchange: isIdr ? 'IDX' : isCrypto ? 'BINANCE' : 'NASDAQ',
+    currency,
+    defaultTimeframe: '1D',
+    lotSize: isIdr ? 100 : isCrypto ? 0.01 : 1,
+    buyFeeBps: isIdr ? 15 : isCrypto ? 5 : 2,
+    sellFeeBps: isIdr ? 25 : isCrypto ? 5 : 2,
+    defaultSlippageBps: 5,
+    defaultInitialCapital: isIdr ? 100000000 : isCrypto ? 10000 : 25000,
+    sector: 'Custom Import',
+    wyckoffVariant: 'SCHEMATIC_2_LPS',
+  };
+
   return {
+    asset,
     id: `csv-${slugSymbol}-${slugTimeframe}`,
     symbol: cleanSymbol,
     timeframe: cleanTimeframe,
     description: `CSV import for ${cleanSymbol} (${cleanTimeframe}) with ${bars.length} bars`,
     bars,
   };
+}
+
+/**
+ * Parses user-uploaded CSV text into a MarketDataset with assigned currency.
+ */
+export function parseCustomCsvDataset(
+  csvText: string,
+  customSymbol: string,
+  currency: 'USD' | 'IDR'
+): MarketDataset {
+  return parseCsvInternal(csvText, customSymbol, '1D', currency);
+}
+
+/**
+ * Backwards-compatible CSV parser accepting timeframe or currency as 3rd parameter.
+ */
+export function parseOhlcvCsv(
+  csvText: string,
+  symbolName: string,
+  timeframeOrCurrency: string = '1D'
+): MarketDataset {
+  if (timeframeOrCurrency === 'USD' || timeframeOrCurrency === 'IDR') {
+    return parseCustomCsvDataset(csvText, symbolName, timeframeOrCurrency);
+  }
+  const cleanSym = symbolName.trim().toUpperCase();
+  const inferredCurrency: 'USD' | 'IDR' = cleanSym.endsWith('.JK') ? 'IDR' : 'USD';
+  return parseCsvInternal(csvText, symbolName, timeframeOrCurrency, inferredCurrency);
 }
