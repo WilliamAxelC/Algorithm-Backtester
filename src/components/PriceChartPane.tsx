@@ -1,41 +1,80 @@
-import React, { useEffect, useRef, useState, useMemo } from 'react';
+import React, { useEffect, useRef, useState, useMemo, useCallback } from 'react';
 import {
   createChart,
   ColorType,
   CrosshairMode,
   LineStyle,
+  type IChartApi,
+  type ISeriesApi,
+  type IPriceLine,
+  type UTCTimestamp,
+  type SeriesMarker,
+  type SeriesMarkerPosition,
+  type SeriesMarkerShape,
 } from 'lightweight-charts';
-import type {
-  IChartApi,
-  ISeriesApi,
-  IPriceLine,
-  UTCTimestamp,
-  SeriesMarker,
-  Time,
-} from 'lightweight-charts';
-import { Maximize2, Layers } from 'lucide-react';
+import {
+  Play,
+  Pause,
+  SkipForward,
+  RotateCcw,
+  Maximize2,
+} from 'lucide-react';
 import type { BacktestResult } from '../types/backtest';
-import type { OHLCVBar, WyckoffPhaseId } from '../types/market';
+import type { OHLCVBar, WyckoffPhaseId, CurrencyCode } from '../types/market';
+import { formatPrice, formatUnixDate, formatSignedPct } from '../utils/formatters';
 
 export interface PriceChartPaneProps {
   readonly result: BacktestResult | null;
-  readonly selectedEvent?: { readonly barIndex: number; readonly time: number } | null;
+  readonly replayIndex: number | null;
+  readonly onScrubReplay: (index: number | null) => void;
+  readonly isPlaying: boolean;
+  readonly onTogglePlay: () => void;
+  readonly onStepForward: () => void;
+  readonly onResetReplay: () => void;
 }
 
-type PhaseFilterId = 'ALL' | WyckoffPhaseId;
+function getPhaseBadgeStyle(phase: WyckoffPhaseId): string {
+  switch (phase) {
+    case 'PHASE_A':
+      return 'bg-slate-100 text-slate-700 border-slate-300';
+    case 'PHASE_B':
+      return 'bg-amber-50 text-amber-800 border-amber-200';
+    case 'PHASE_C':
+      return 'bg-blue-50 text-blue-700 border-blue-200';
+    case 'PHASE_D':
+      return 'bg-teal-50 text-teal-700 border-teal-200';
+    case 'PHASE_E':
+      return 'bg-emerald-50 text-emerald-700 border-emerald-200';
+    default:
+      return 'bg-slate-50 text-slate-500 border-slate-200';
+  }
+}
 
-const PHASE_FILTER_PILLS: readonly { readonly id: PhaseFilterId; readonly label: string }[] = [
-  { id: 'ALL', label: 'All Phases' },
-  { id: 'PHASE_A', label: 'Phase A' },
-  { id: 'PHASE_B', label: 'Phase B' },
-  { id: 'PHASE_C', label: 'Phase C' },
-  { id: 'PHASE_D', label: 'Phase D' },
-  { id: 'PHASE_E', label: 'Phase E' },
-];
+function formatPhaseName(phase: WyckoffPhaseId): string {
+  switch (phase) {
+    case 'PHASE_A':
+      return 'Phase A';
+    case 'PHASE_B':
+      return 'Phase B';
+    case 'PHASE_C':
+      return 'Phase C (Spring / LPS)';
+    case 'PHASE_D':
+      return 'Phase D (SOS)';
+    case 'PHASE_E':
+      return 'Phase E (Markup)';
+    default:
+      return 'Consolidation';
+  }
+}
 
 export const PriceChartPane: React.FC<PriceChartPaneProps> = ({
   result,
-  selectedEvent,
+  replayIndex,
+  onScrubReplay,
+  isPlaying,
+  onTogglePlay,
+  onStepForward,
+  onResetReplay,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
@@ -43,10 +82,29 @@ export const PriceChartPane: React.FC<PriceChartPaneProps> = ({
   const volumeSeriesRef = useRef<ISeriesApi<'Histogram'> | null>(null);
   const priceLinesRef = useRef<IPriceLine[]>([]);
 
-  const [activePhaseFilter, setActivePhaseFilter] = useState<PhaseFilterId>('ALL');
   const [hoveredBar, setHoveredBar] = useState<OHLCVBar | null>(null);
 
-  // Map for rapid O(1) bar lookups by timestamp during crosshair events
+  const currency: CurrencyCode = result?.asset?.currency ?? 'USD';
+  const totalBars = result?.bars.length ?? 0;
+  const currentIndex =
+    replayIndex !== null
+      ? Math.max(0, Math.min(totalBars - 1, replayIndex))
+      : Math.max(0, totalBars - 1);
+
+  // Bars visible in chart (sliced if replayIndex is active)
+  const visibleBars: readonly OHLCVBar[] = useMemo(() => {
+    if (!result || result.bars.length === 0) {
+      return [];
+    }
+    if (replayIndex !== null) {
+      return result.bars.slice(0, currentIndex + 1);
+    }
+    return result.bars;
+  }, [result, replayIndex, currentIndex]);
+
+  const currentBar: OHLCVBar | undefined = result?.bars[currentIndex];
+
+  // Map for fast O(1) timestamp lookups during crosshair events
   const barMap = useMemo(() => {
     const map = new Map<number, OHLCVBar>();
     if (result && result.bars) {
@@ -57,22 +115,26 @@ export const PriceChartPane: React.FC<PriceChartPaneProps> = ({
     return map;
   }, [result]);
 
-  // Fallback active bar for the legend when crosshair is idle
-  const latestBar: OHLCVBar | null = useMemo(() => {
-    if (hoveredBar) return hoveredBar;
-    if (result && result.bars.length > 0) {
-      const last = result.bars[result.bars.length - 1];
-      return last ?? null;
+  // Phase lookup map by timestamp from equityCurve
+  const phaseMap = useMemo(() => {
+    const map = new Map<number, WyckoffPhaseId>();
+    if (result && result.equityCurve) {
+      for (const pt of result.equityCurve) {
+        map.set(pt.time, pt.phase);
+      }
     }
-    return null;
-  }, [hoveredBar, result]);
+    return map;
+  }, [result]);
+
+  const displayBar: OHLCVBar | undefined = hoveredBar ?? currentBar;
+  const activePhase: WyckoffPhaseId =
+    displayBar !== undefined ? (phaseMap.get(displayBar.time) ?? 'NONE') : 'NONE';
 
   // 1. Initialize Lightweight Chart canvas and configure Swiss light mode tokens
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
 
-    // Remove any previous instance if container re-mounts
     if (chartRef.current) {
       chartRef.current.remove();
       chartRef.current = null;
@@ -83,7 +145,7 @@ export const PriceChartPane: React.FC<PriceChartPaneProps> = ({
       height: container.clientHeight || 400,
       layout: {
         background: { type: ColorType.Solid, color: '#FFFFFF' },
-        textColor: '#475569',
+        textColor: '#64748B',
         fontFamily: "'JetBrains Mono', monospace",
       },
       grid: {
@@ -116,168 +178,247 @@ export const PriceChartPane: React.FC<PriceChartPaneProps> = ({
       wickDownColor: '#E11D48',
     });
 
-    // Volume histogram overlaid on bottom 18% of pane
     const volumeSeries = chart.addHistogramSeries({
+      color: '#0D9488',
       priceFormat: {
         type: 'volume',
       },
-      priceScaleId: '', // Overlay scale
+      priceScaleId: 'volume',
     });
-    volumeSeries.priceScale().applyOptions({
+
+    chart.priceScale('volume').applyOptions({
       scaleMargins: {
-        top: 0.82,
+        top: 0.8,
         bottom: 0,
       },
     });
 
-    // Crosshair movement listener for OHLCV legend
     chart.subscribeCrosshairMove((param) => {
-      if (!param.time || !param.point) {
+      if (param.time) {
+        const timeNum = typeof param.time === 'number' ? param.time : 0;
+        const bar = barMap.get(timeNum);
+        setHoveredBar(bar ?? null);
+      } else {
         setHoveredBar(null);
-        return;
       }
-      const timeNum = Number(param.time);
-      const found = barMap.get(timeNum);
-      setHoveredBar(found ?? null);
     });
 
     chartRef.current = chart;
     candlestickSeriesRef.current = candlestickSeries;
     volumeSeriesRef.current = volumeSeries;
 
-    // Handle responsive container resizing
-    const resizeObserver = new ResizeObserver((entries) => {
+    const ro = new ResizeObserver((entries) => {
       const entry = entries[0];
-      if (!entry || !chartRef.current) return;
+      if (!entry) return;
       const { width, height } = entry.contentRect;
       if (width > 0 && height > 0) {
-        chartRef.current.applyOptions({ width, height });
+        chart.applyOptions({ width, height });
       }
     });
-    resizeObserver.observe(container);
+    ro.observe(container);
 
     return () => {
-      resizeObserver.disconnect();
-      if (chartRef.current) {
-        chartRef.current.remove();
-        chartRef.current = null;
-      }
+      ro.disconnect();
+      chart.remove();
+      chartRef.current = null;
       candlestickSeriesRef.current = null;
       volumeSeriesRef.current = null;
-      priceLinesRef.current = [];
     };
-  }, []);
+  }, [barMap]);
 
-  // 2. Load Bars & Volume data whenever result changes
+  // 2. Synchronize candlestick and volume series data
   useEffect(() => {
     const candleSeries = candlestickSeriesRef.current;
     const volSeries = volumeSeriesRef.current;
-    const chart = chartRef.current;
-    if (!candleSeries || !volSeries || !chart || !result || result.bars.length === 0) {
+    if (!candleSeries || !volSeries) return;
+
+    if (visibleBars.length === 0) {
+      candleSeries.setData([]);
+      volSeries.setData([]);
       return;
     }
 
-    // Ensure ascending sort and UTCTimestamp casting
-    const sortedBars = [...result.bars].sort((a, b) => a.time - b.time);
+    candleSeries.setData(
+      visibleBars.map((bar) => ({
+        time: bar.time as UTCTimestamp,
+        open: bar.open,
+        high: bar.high,
+        low: bar.low,
+        close: bar.close,
+      }))
+    );
 
-    const candleData = sortedBars.map((b) => ({
-      time: b.time as UTCTimestamp,
-      open: b.open,
-      high: b.high,
-      low: b.low,
-      close: b.close,
-    }));
+    volSeries.setData(
+      visibleBars.map((bar) => ({
+        time: bar.time as UTCTimestamp,
+        value: bar.volume,
+        color:
+          bar.close >= bar.open
+            ? 'rgba(13, 148, 136, 0.45)'
+            : 'rgba(225, 29, 72, 0.45)',
+      }))
+    );
 
-    const volumeData = sortedBars.map((b) => {
-      const isUp = b.close >= b.open;
-      return {
-        time: b.time as UTCTimestamp,
-        value: b.volume,
-        color: isUp ? 'rgba(13, 148, 136, 0.45)' : 'rgba(225, 29, 72, 0.45)',
-      };
-    });
-
-    candleSeries.setData(candleData);
-    volSeries.setData(volumeData);
-
-    // Clear previous price lines
-    for (const pl of priceLinesRef.current) {
-      candleSeries.removePriceLine(pl);
+    // Initial fit when full dataset is loaded
+    if (replayIndex === null) {
+      chartRef.current?.timeScale().fitContent();
     }
-    priceLinesRef.current = [];
+  }, [visibleBars, replayIndex]);
 
-    // Plot horizontal Trading Range price lines if detected
-    if (result.zones && result.zones.length > 0) {
-      const latestZone = result.zones[result.zones.length - 1];
-      if (latestZone) {
-        const supportLine = candleSeries.createPriceLine({
-          price: latestZone.supportPrice,
-          color: '#0D9488',
-          lineWidth: 1,
-          lineStyle: LineStyle.Dashed,
-          axisLabelVisible: true,
-          title: 'TR Support (SC/ST Low)',
-        });
-        priceLinesRef.current.push(supportLine);
-
-        const resistanceLine = candleSeries.createPriceLine({
-          price: latestZone.resistancePrice,
-          color: '#2563EB',
-          lineWidth: 1,
-          lineStyle: LineStyle.Dashed,
-          axisLabelVisible: true,
-          title: 'TR Resistance (AR High)',
-        });
-        priceLinesRef.current.push(resistanceLine);
-      }
-    }
-
-    chart.timeScale().fitContent();
-  }, [result]);
-
-  // 3. Update Markers when active phase filter or result changes
+  // 3. Render Support & Resistance lines and Chart Markers
   useEffect(() => {
     const candleSeries = candlestickSeriesRef.current;
     if (!candleSeries || !result) return;
 
-    const markers: SeriesMarker<Time>[] = [];
+    // Remove existing price lines
+    for (const line of priceLinesRef.current) {
+      try {
+        candleSeries.removePriceLine(line);
+      } catch {
+        // Ignored if already removed
+      }
+    }
+    priceLinesRef.current = [];
 
-    // 3a. Wyckoff strategy event annotations
+    const cutoffTime = currentBar !== undefined ? currentBar.time : Infinity;
+
+    // 3a. Add Support & Resistance lines from result.zones
+    for (const zone of result.zones) {
+      if (zone.startTime <= cutoffTime) {
+        const supLine = candleSeries.createPriceLine({
+          price: zone.supportPrice,
+          color: '#2563EB',
+          lineWidth: 2,
+          lineStyle: LineStyle.Dashed,
+          axisLabelVisible: true,
+          title: `${zone.label || 'TR'} Sup (${formatPrice(zone.supportPrice, currency)})`,
+        });
+
+        const resLine = candleSeries.createPriceLine({
+          price: zone.resistancePrice,
+          color: '#64748B',
+          lineWidth: 2,
+          lineStyle: LineStyle.Dashed,
+          axisLabelVisible: true,
+          title: `${zone.label || 'TR'} Res (${formatPrice(zone.resistancePrice, currency)})`,
+        });
+
+        priceLinesRef.current.push(supLine, resLine);
+      }
+    }
+
+    // 3b. Add Wyckoff and algorithm event markers
+    const markers: SeriesMarker<UTCTimestamp>[] = [];
+
     for (const m of result.markers) {
-      if (activePhaseFilter !== 'ALL' && m.phase !== activePhaseFilter) {
+      if (m.time > cutoffTime) {
         continue;
       }
+
+      let position: SeriesMarkerPosition = m.position ?? 'belowBar';
+      let shape: SeriesMarkerShape = m.shape ?? 'circle';
+      let color: string = m.color ?? '#2563EB';
+
+      switch (m.tag) {
+        case 'PS':
+          position = 'belowBar';
+          shape = 'square';
+          color = '#64748B';
+          break;
+        case 'SC':
+          position = 'belowBar';
+          shape = 'arrowUp';
+          color = '#E11D48';
+          break;
+        case 'AR':
+          position = 'aboveBar';
+          shape = 'arrowDown';
+          color = '#0D9488';
+          break;
+        case 'ST':
+          position = 'belowBar';
+          shape = 'circle';
+          color = '#D97706';
+          break;
+        case 'UT':
+          position = 'aboveBar';
+          shape = 'arrowDown';
+          color = '#D97706';
+          break;
+        case 'SPRING':
+          position = 'belowBar';
+          shape = 'arrowUp';
+          color = '#2563EB';
+          break;
+        case 'SOS':
+          position = 'aboveBar';
+          shape = 'arrowUp';
+          color = '#0D9488';
+          break;
+        case 'LPS':
+          position = 'belowBar';
+          shape = 'arrowUp';
+          color = '#0D9488';
+          break;
+        case 'BU':
+          position = 'aboveBar';
+          shape = 'arrowUp';
+          color = '#2563EB';
+          break;
+        case 'ENTRY':
+          position = 'belowBar';
+          shape = 'arrowUp';
+          color = '#0D9488';
+          break;
+        case 'EXIT':
+          position = 'aboveBar';
+          shape = 'arrowDown';
+          color = '#E11D48';
+          break;
+        default:
+          if (m.label.includes('RSI-OS')) {
+            position = 'belowBar';
+            shape = 'circle';
+            color = '#0D9488';
+          } else if (m.label.includes('RSI-OB')) {
+            position = 'aboveBar';
+            shape = 'circle';
+            color = '#E11D48';
+          }
+          break;
+      }
+
       markers.push({
         time: m.time as UTCTimestamp,
-        position: m.position,
-        shape: m.shape,
-        color: m.color,
+        position,
+        shape,
+        color,
         text: m.label ? `${m.tag}: ${m.label}` : m.tag,
         id: `event-${m.tag}-${m.time}-${m.barIndex}`,
       });
     }
 
-    // 3b. Executed Trade entry and exit markers
+    // 3c. Add trade entry and exit markers
     for (const trade of result.trades) {
-      if (activePhaseFilter === 'ALL' || trade.entryPhase === activePhaseFilter) {
+      if (trade.entryTime <= cutoffTime) {
         markers.push({
           time: trade.entryTime as UTCTimestamp,
           position: 'belowBar',
           shape: 'arrowUp',
           color: '#0D9488',
-          text: `BUY #${trade.id} @ $${trade.entryPrice.toFixed(2)}`,
+          text: `BUY #${trade.id} @ ${formatPrice(trade.entryPrice, currency)}`,
           id: `trade-in-${trade.id}`,
         });
       }
 
-      if (activePhaseFilter === 'ALL' || trade.entryPhase === activePhaseFilter) {
+      if (trade.exitTime <= cutoffTime) {
         const isWin = trade.netPnl >= 0;
         markers.push({
           time: trade.exitTime as UTCTimestamp,
           position: 'aboveBar',
           shape: 'arrowDown',
           color: isWin ? '#0D9488' : '#E11D48',
-          text: `EXIT #${trade.id} (${trade.exitReason}) @ $${trade.exitPrice.toFixed(2)}`,
+          text: `EXIT #${trade.id} (${trade.exitReason}) @ ${formatPrice(trade.exitPrice, currency)}`,
           id: `trade-out-${trade.id}`,
         });
       }
@@ -286,142 +427,155 @@ export const PriceChartPane: React.FC<PriceChartPaneProps> = ({
     // Strictly ascending timestamp sort required by lightweight-charts
     markers.sort((a, b) => Number(a.time) - Number(b.time));
     candleSeries.setMarkers(markers);
-  }, [result, activePhaseFilter]);
+  }, [result, currentBar, currency]);
 
-  // 4. Scroll / Center chart when selectedEvent is triggered from ledger
-  useEffect(() => {
-    if (!selectedEvent || !chartRef.current || !result || result.bars.length === 0) {
-      return;
-    }
-    const idx = selectedEvent.barIndex;
-    const windowSize = 16;
-    chartRef.current.timeScale().setVisibleLogicalRange({
-      from: Math.max(0, idx - windowSize),
-      to: Math.min(result.bars.length - 1, idx + windowSize),
-    });
-  }, [selectedEvent, result]);
-
-  const handleFitContent = (): void => {
+  const handleFitContent = useCallback((): void => {
     chartRef.current?.timeScale().fitContent();
-  };
+  }, []);
 
   // Format active bar metrics
-  const isUpBar = latestBar ? latestBar.close >= latestBar.open : true;
-  const barChange = latestBar ? latestBar.close - latestBar.open : 0;
+  const barChange = displayBar !== undefined ? displayBar.close - displayBar.open : 0;
   const barChangePct =
-    latestBar && latestBar.open > 0 ? (barChange / latestBar.open) * 100 : 0;
+    displayBar !== undefined && displayBar.open > 0
+      ? (barChange / displayBar.open) * 100
+      : 0;
+  const barColorClass =
+    barChange >= 0 ? 'text-teal-600 font-semibold' : 'text-rose-600 font-semibold';
 
   return (
     <div className="w-full h-full flex flex-col bg-white select-none">
-      {/* Top Toolbar Strip */}
+      {/* Top Crosshair Legend Strip */}
       <div className="flex-shrink-0 px-3.5 py-1.5 bg-white border-b border-slate-200 flex flex-wrap items-center justify-between gap-2">
-        {/* Left Segment: Symbol, Timeframe & Hover OHLCV Legend */}
         <div className="flex items-center space-x-3 text-xs">
-          {result && (
-            <div className="flex items-center space-x-1.5 font-bold text-slate-800">
-              <span>{result.symbol}</span>
-              <span className="text-[10px] font-mono px-1 py-0.2 bg-slate-100 text-slate-600 rounded">
-                {result.timeframe}
-              </span>
-            </div>
-          )}
+          <span className="font-mono font-bold text-slate-900 tracking-tight">
+            {result?.symbol ?? 'CHART'}
+          </span>
+          <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 border border-slate-200">
+            {result?.timeframe ?? '1D'}
+          </span>
 
-          {latestBar ? (
-            <div className="flex items-center space-x-2.5 font-mono tabular-nums text-xs">
-              <span className="text-slate-400 text-[11px]">
-                {new Date(latestBar.time * 1000).toISOString().replace('T', ' ').substring(0, 16)}
+          {displayBar !== undefined && (
+            <div className="flex items-center space-x-2 text-[11px] font-mono tabular-nums text-slate-600 border-l border-slate-200 pl-3">
+              <span>
+                <span className="text-slate-400 font-normal">O: </span>
+                {formatPrice(displayBar.open, currency)}
               </span>
               <span>
-                <span className="text-slate-400 mr-0.5">O:</span>
-                <span className="font-semibold text-slate-800">
-                  ${latestBar.open.toFixed(2)}
-                </span>
+                <span className="text-slate-400 font-normal">H: </span>
+                {formatPrice(displayBar.high, currency)}
               </span>
               <span>
-                <span className="text-slate-400 mr-0.5">H:</span>
-                <span className="font-semibold text-slate-800">
-                  ${latestBar.high.toFixed(2)}
-                </span>
+                <span className="text-slate-400 font-normal">L: </span>
+                {formatPrice(displayBar.low, currency)}
               </span>
               <span>
-                <span className="text-slate-400 mr-0.5">L:</span>
-                <span className="font-semibold text-slate-800">
-                  ${latestBar.low.toFixed(2)}
-                </span>
+                <span className="text-slate-400 font-normal">C: </span>
+                {formatPrice(displayBar.close, currency)}
               </span>
-              <span>
-                <span className="text-slate-400 mr-0.5">C:</span>
-                <span
-                  className={`font-semibold ${
-                    isUpBar ? 'text-[#0D9488]' : 'text-[#E11D48]'
-                  }`}
-                >
-                  ${latestBar.close.toFixed(2)}
-                </span>
-              </span>
-              <span
-                className={`text-[11px] font-medium ${
-                  isUpBar ? 'text-[#0D9488]' : 'text-[#E11D48]'
-                }`}
-              >
+              <span className={barColorClass}>
                 {barChange >= 0 ? '+' : ''}
-                {barChange.toFixed(2)} ({barChangePct >= 0 ? '+' : ''}
-                {barChangePct.toFixed(2)}%)
+                {formatPrice(barChange, currency)} ({formatSignedPct(barChangePct)})
               </span>
+              <span className="text-slate-300">|</span>
               <span>
-                <span className="text-slate-400 mr-0.5">Vol:</span>
-                <span className="text-slate-700">
-                  {latestBar.volume.toLocaleString('en-US')}
-                </span>
+                <span className="text-slate-400 font-normal">Vol: </span>
+                {displayBar.volume.toLocaleString('en-US')}
               </span>
-            </div>
-          ) : (
-            <div className="font-mono text-xs text-slate-400">
-              Awaiting dataset load...
             </div>
           )}
         </div>
 
-        {/* Right Segment: Phase Filter Pills & Fit Content Button */}
-        <div className="flex items-center space-x-2">
-          {/* Phase Filter Pills */}
-          <div className="flex items-center space-x-1 bg-slate-50 p-0.5 rounded border border-slate-200">
-            <Layers className="w-3 h-3 text-slate-400 ml-1 mr-0.5" />
-            {PHASE_FILTER_PILLS.map((pill) => {
-              const isActive = activePhaseFilter === pill.id;
-              return (
-                <button
-                  key={pill.id}
-                  type="button"
-                  onClick={() => setActivePhaseFilter(pill.id)}
-                  className={`px-2 py-0.5 text-[10px] font-mono rounded transition-colors ${
-                    isActive
-                      ? 'bg-blue-600 text-white font-semibold shadow-none'
-                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
-                  }`}
-                >
-                  {pill.label}
-                </button>
-              );
-            })}
-          </div>
-
-          {/* Fit Content Action */}
+        {/* Right HUD: Wyckoff Phase Badge & Fit Button */}
+        <div className="flex items-center gap-2">
+          {activePhase !== 'NONE' && (
+            <span
+              className={`inline-flex items-center px-2 py-0.5 rounded text-[11px] font-mono font-semibold border ${getPhaseBadgeStyle(activePhase)}`}
+            >
+              {formatPhaseName(activePhase)}
+            </span>
+          )}
           <button
             type="button"
             onClick={handleFitContent}
-            className="inline-flex items-center space-x-1 px-2 py-1 text-xs font-medium text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded shadow-none transition-colors"
-            title="Auto-fit time scale and price range"
+            className="p-1 rounded text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
+            title="Fit chart view"
           >
-            <Maximize2 className="w-3.5 h-3.5 text-slate-600" />
-            <span className="text-[11px]">Fit Content</span>
+            <Maximize2 className="w-3.5 h-3.5" />
           </button>
         </div>
       </div>
 
-      {/* Lightweight Charts Canvas Host */}
-      <div className="flex-1 w-full min-h-0 relative">
-        <div ref={containerRef} className="absolute inset-0 w-full h-full" />
+      {/* Center Chart Canvas */}
+      <div ref={containerRef} className="flex-1 w-full min-h-0 relative" />
+
+      {/* Docked Bar-by-Bar Replay Scrubber Strip */}
+      <div className="flex-shrink-0 border-t border-slate-200 bg-white px-4 py-2 flex items-center gap-3 select-none">
+        {/* Play/Pause Toggle */}
+        <button
+          type="button"
+          onClick={onTogglePlay}
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 transition-colors cursor-pointer"
+          title={isPlaying ? 'Pause replay' : 'Play bar-by-bar replay'}
+        >
+          {isPlaying ? (
+            <>
+              <Pause className="w-3.5 h-3.5 text-blue-600 fill-blue-600" />
+              <span>Pause</span>
+            </>
+          ) : (
+            <>
+              <Play className="w-3.5 h-3.5 text-blue-600 fill-blue-600" />
+              <span>Play</span>
+            </>
+          )}
+        </button>
+
+        {/* Step Forward */}
+        <button
+          type="button"
+          onClick={onStepForward}
+          disabled={currentIndex >= totalBars - 1}
+          className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold rounded border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer"
+          title="Step forward 1 bar"
+        >
+          <SkipForward className="w-3.5 h-3.5 text-slate-600" />
+          <span>Step</span>
+        </button>
+
+        {/* Reset */}
+        <button
+          type="button"
+          onClick={onResetReplay}
+          className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold rounded border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 transition-colors cursor-pointer"
+          title="Reset to full dataset window"
+        >
+          <RotateCcw className="w-3.5 h-3.5 text-slate-600" />
+          <span>Reset</span>
+        </button>
+
+        {/* Slider Track / Range Input */}
+        <div className="flex-1 flex items-center px-2">
+          <input
+            type="range"
+            min={0}
+            max={Math.max(0, totalBars - 1)}
+            value={currentIndex}
+            onChange={(e) => onScrubReplay(Number(e.target.value))}
+            className="w-full accent-blue-600 h-1.5 bg-slate-200 rounded-lg cursor-pointer"
+          />
+        </div>
+
+        {/* Live Readout Badge */}
+        <div className="flex-shrink-0 text-xs font-mono tabular-nums text-slate-700 bg-slate-100 px-2.5 py-1 rounded border border-slate-200">
+          {currentBar !== undefined ? (
+            <span>
+              Bar {currentIndex + 1} of {totalBars} · {formatUnixDate(currentBar.time)} · Close:{' '}
+              {formatPrice(currentBar.close, currency)}
+            </span>
+          ) : (
+            <span>No bar data</span>
+          )}
+        </div>
       </div>
     </div>
   );
