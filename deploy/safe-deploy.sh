@@ -71,6 +71,8 @@ fi
 # ------------------------------------------------------------------------------
 echo -e "\n[Step 2/5] Pre-warming real market 10Y historical OHLCV data & cache..."
 mkdir -p "${DATA_DIR}/ohlcv" "${DATA_DIR}/prerendered"
+echo "  Clearing stale pre-rendered 10Y cache to regenerate with structural VSA engine..."
+rm -f "${DATA_DIR}/prerendered"/*.json 2>/dev/null || true
 
 cd "${REPO_DIR}"
 
@@ -219,6 +221,26 @@ if [[ "${HNT_BARS_COUNT}" -ge 500 ]]; then
   echo "PASS ✓ (${HNT_BARS_COUNT} real Binance bars returned)"
 else
   echo "FAIL ✗ (Expected >= 500 bars, got ${HNT_BARS_COUNT})"
+  exit 1
+fi
+
+# 5.4 Verify Unbuffered 1s SSE Live Stream
+echo -n "  4. Verifying Unbuffered 1s SSE Live Stream... "
+SSE_LINE=$(timeout 4 curl -s -N "http://127.0.0.1:${PORT}/api/projects/backtester/stream?symbol=HNTUSDTPERP" | grep -m 1 '^data: ' || true)
+if echo "${SSE_LINE}" | grep -q '"symbol":"HNTUSDTPERP"'; then
+  echo "PASS ✓ (${SSE_LINE})"
+else
+  echo "FAIL ✗ (Did not receive SSE tick line within 4s: ${SSE_LINE})"
+  exit 1
+fi
+
+# 5.5 Verify 1D View returns 1m Intraday Candles
+echo -n "  5. Verifying 1D View returns 1m Intraday Candles... "
+INTRA_RES=$(curl -sf "http://127.0.0.1:${PORT}/api/projects/backtester/backtest?symbol=HNTUSDTPERP&strategyId=wyckoff-accumulation-v2&preset=1D&riskPosture=BALANCED")
+if echo "${INTRA_RES}" | grep -q '"displayInterval":"1m"'; then
+  echo "PASS ✓ (1m intraday displayInterval confirmed)"
+else
+  echo "FAIL ✗ (Expected displayInterval: 1m)"
   exit 1
 fi
 
