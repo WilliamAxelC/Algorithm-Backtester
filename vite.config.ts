@@ -11,6 +11,11 @@ export default defineConfig({
         target: 'http://127.0.0.1:4175',
         changeOrigin: true,
       },
+      '/projects/backtester/api/projects/backtester': {
+        target: 'http://127.0.0.1:4175',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/projects\/backtester/, ''),
+      },
     },
   },
 });

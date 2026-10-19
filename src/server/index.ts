@@ -50,13 +50,18 @@ const server = http.createServer(async (req, res) => {
   const reqUrl = req.url ?? '/';
   const parsedUrl = new URL(reqUrl, `http://${req.headers.host || '127.0.0.1'}`);
   const pathname = parsedUrl.pathname;
-
-  // -------------------------------------------------------------
-  // API Routes
-  // -------------------------------------------------------------
+  let apiPath = pathname;
+  if (apiPath.startsWith('/projects/backtester')) {
+    apiPath = apiPath.slice('/projects/backtester'.length);
+  }
 
   // 1. Health check
-  if (pathname === '/api/projects/backtester/health' || pathname === '/health') {
+  if (
+    pathname === '/api/projects/backtester/health' ||
+    apiPath === '/api/projects/backtester/health' ||
+    apiPath === '/health' ||
+    pathname === '/health'
+  ) {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(
       JSON.stringify({
@@ -71,7 +76,11 @@ const server = http.createServer(async (req, res) => {
   }
 
   // 2. Catalog and Strategy Metadata
-  if (pathname === '/api/projects/backtester/catalog') {
+  if (
+    pathname === '/api/projects/backtester/catalog' ||
+    apiPath === '/api/projects/backtester/catalog' ||
+    apiPath === '/catalog'
+  ) {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(
       JSON.stringify({
@@ -83,7 +92,11 @@ const server = http.createServer(async (req, res) => {
   }
 
   // 3. Backtest Execution / Precomputed Retrieval
-  if (pathname === '/api/projects/backtester/backtest') {
+  if (
+    pathname === '/api/projects/backtester/backtest' ||
+    apiPath === '/api/projects/backtester/backtest' ||
+    apiPath === '/backtest'
+  ) {
     try {
       const symbol = parsedUrl.searchParams.get('symbol') || 'HNTUSDTPERP';
       const strategyId = parsedUrl.searchParams.get('strategyId') || 'wyckoff-accumulation-v2';
@@ -128,7 +141,11 @@ const server = http.createServer(async (req, res) => {
   }
 
   // 4. Server-Sent Events (SSE) Live 1-Second Ticker Stream
-  if (pathname === '/api/projects/backtester/stream') {
+  if (
+    pathname === '/api/projects/backtester/stream' ||
+    apiPath === '/api/projects/backtester/stream' ||
+    apiPath === '/stream'
+  ) {
     const symbol = parsedUrl.searchParams.get('symbol') || 'HNTUSDTPERP';
     liveTickerHub.addClient(res, symbol);
     return;

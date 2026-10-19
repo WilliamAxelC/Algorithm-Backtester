@@ -5,7 +5,11 @@ export function subscribeToLiveTicker(
   onTick: (tick: LiveQuoteTick) => void,
   onError?: (err: Event) => void
 ): () => void {
-  const url = `/api/projects/backtester/stream?symbol=${encodeURIComponent(symbol)}`;
+  const basePath =
+    typeof window !== 'undefined' && window.location.pathname.includes('/projects/backtester')
+      ? '/projects/backtester/api/projects/backtester'
+      : '/api/projects/backtester';
+  const url = `${basePath}/stream?symbol=${encodeURIComponent(symbol)}`;
   const eventSource = new EventSource(url);
 
   eventSource.onmessage = (event) => {
