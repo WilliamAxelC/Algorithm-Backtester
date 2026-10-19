@@ -85,23 +85,78 @@ export function formatSignedPct(pct: number): string {
   return `${sign}${pct.toFixed(2)}%`;
 }
 
+export const WIB_OFFSET_SECONDS = 7 * 3600; // +25,200 seconds (GMT+7)
+
+export function toWibChartTime(utcSec: number): number {
+  return utcSec + WIB_OFFSET_SECONDS;
+}
+
+export function fromWibChartTime(wibChartSec: number): number {
+  return wibChartSec - WIB_OFFSET_SECONDS;
+}
+
+const wibDateFormatter = new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'Asia/Jakarta',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+});
+
+const wibDateTimeFormatter = new Intl.DateTimeFormat('en-GB', {
+  timeZone: 'Asia/Jakarta',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+  hour: '2-digit',
+  minute: '2-digit',
+  second: '2-digit',
+  hour12: false,
+});
+
+const wibClockFormatter = new Intl.DateTimeFormat('en-GB', {
+  timeZone: 'Asia/Jakarta',
+  hour: '2-digit',
+  minute: '2-digit',
+  second: '2-digit',
+  hour12: false,
+});
+
 /**
- * Formats a Unix timestamp (seconds) into ISO/tabular date string.
+ * Formats a Unix timestamp (seconds) into ISO/tabular date string in Asia/Jakarta (WIB / GMT+7).
  */
 export function formatUnixDate(unixSec: number, includeTime: boolean = false): string {
   if (!Number.isFinite(unixSec) || unixSec <= 0) return '-';
   const d = new Date(unixSec * 1000);
-  const year = d.getUTCFullYear();
-  const month = String(d.getUTCMonth() + 1).padStart(2, '0');
-  const day = String(d.getUTCDate()).padStart(2, '0');
 
   if (!includeTime) {
-    return `${year}-${month}-${day}`;
+    return wibDateFormatter.format(d);
   }
 
-  const hours = String(d.getUTCHours()).padStart(2, '0');
-  const minutes = String(d.getUTCMinutes()).padStart(2, '0');
-  return `${year}-${month}-${day} ${hours}:${minutes} UTC`;
+  const parts = wibDateTimeFormatter.formatToParts(d);
+  let year = '';
+  let month = '';
+  let day = '';
+  let hour = '';
+  let minute = '';
+  let second = '';
+  for (const part of parts) {
+    if (part.type === 'year') year = part.value;
+    else if (part.type === 'month') month = part.value;
+    else if (part.type === 'day') day = part.value;
+    else if (part.type === 'hour') hour = part.value;
+    else if (part.type === 'minute') minute = part.value;
+    else if (part.type === 'second') second = part.value;
+  }
+  return `${year}-${month}-${day} ${hour}:${minute}:${second} WIB`;
+}
+
+/**
+ * Formats a Unix timestamp (seconds) into live clock format: HH:mm:ss WIB (GMT+7).
+ */
+export function formatWibClock(unixSec: number): string {
+  if (!Number.isFinite(unixSec) || unixSec <= 0) return '--:--:-- WIB';
+  const d = new Date(unixSec * 1000);
+  return `${wibClockFormatter.format(d)} WIB (GMT+7)`;
 }
 
 /**
