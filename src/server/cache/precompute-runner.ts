@@ -30,11 +30,14 @@ import {
 export async function ensureAssetData(
   asset: AssetMetadata,
   interval: CandleInterval,
-  forceRefresh: boolean = false
+  forceRefresh: boolean = false,
+  maxCacheAgeMs?: number
 ): Promise<readonly OHLCVBar[]> {
   const filePath = getOhlcvCachePath(asset.symbol, interval);
   const ttl =
-    interval === '1d'
+    maxCacheAgeMs !== undefined
+      ? maxCacheAgeMs
+      : interval === '1d'
       ? CACHE_TTL.DAILY_BARS_MS
       : interval === '1h'
       ? CACHE_TTL.HOURLY_BARS_MS
@@ -116,7 +119,9 @@ export async function ensureAssetDataAndBacktest(
   let displayBars: readonly OHLCVBar[] = executionBars;
   if (displayInterval !== executionInterval) {
     try {
-      const intradayBars = await ensureAssetData(asset, displayInterval);
+      const is1DPreset = timeRange.preset === '1D';
+      const maxAgeMs = is1DPreset ? 15000 : undefined;
+      const intradayBars = await ensureAssetData(asset, displayInterval, false, maxAgeMs);
       if (intradayBars.length > 0) {
         displayBars = intradayBars;
       }
