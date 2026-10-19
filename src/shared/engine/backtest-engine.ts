@@ -170,7 +170,21 @@ export function executeAndSliceBacktest(params: {
     }
 
     // Check intrabar stop loss or take profit first
-    tracker.checkIntraBarStops(bar, i);
+    const stopTrade = tracker.checkIntraBarStops(bar, i);
+    if (stopTrade) {
+      allMarkers.push({
+        time: bar.time,
+        barIndex: i,
+        phase: 'PHASE_E',
+        tag: 'EXIT',
+        price: stopTrade.exitPrice,
+        position: 'aboveBar',
+        shape: 'arrowDown',
+        color: stopTrade.netPnl > 0 ? '#0D9488' : '#E11D48',
+        label: `EXIT ${stopTrade.returnPct > 0 ? '+' : ''}${stopTrade.returnPct.toFixed(1)}%`,
+        plainEnglishStory: `${stopTrade.exitReason}: ${stopTrade.exitDetail} (PnL: ${stopTrade.netPnl.toFixed(2)})`,
+      });
+    }
 
     // Call strategy
     const currentEquity = tracker.getCurrentEquity(bar.close);
