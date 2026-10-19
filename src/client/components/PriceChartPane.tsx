@@ -18,7 +18,13 @@ import type {
   LiveQuoteTick,
   OHLCVBar,
 } from '../../shared/types/market';
-import { formatPrice } from '../../shared/utils/formatters';
+import {
+  formatPrice,
+  formatUnixDate,
+  formatWibClock,
+  toWibChartTime,
+  fromWibChartTime,
+} from '../../shared/utils/formatters';
 
 interface PriceChartPaneProps {
   readonly asset: AssetMetadata;
@@ -45,14 +51,21 @@ export const PriceChartPane: React.FC<PriceChartPaneProps> = ({
   const candleSeriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
   const volumeSeriesRef = useRef<ISeriesApi<'Histogram'> | null>(null);
   const priceLinesRef = useRef<IPriceLine[]>([]);
+  const lastBarRef = useRef<OHLCVBar | null>(null);
 
   const [crosshairBar, setCrosshairBar] = useState<OHLCVBar | null>(null);
+  const [liveBar, setLiveBar] = useState<OHLCVBar | null>(null);
 
   // Initialize and handle chart container setup
   useEffect(() => {
     if (!chartContainerRef.current) return;
 
     const chart = createChart(chartContainerRef.current, {
+      localization: {
+        timeFormatter: (timeSec: number) => {
+          return formatUnixDate(fromWibChartTime(timeSec), displayInterval !== '1d');
+        },
+      },
       layout: {
         background: { type: ColorType.Solid, color: '#FFFFFF' },
         textColor: '#64748B',
@@ -139,7 +152,7 @@ export const PriceChartPane: React.FC<PriceChartPaneProps> = ({
             | { value: number }
             | undefined;
           setCrosshairBar({
-            time: typeof barData.time === 'number' ? barData.time : 0,
+            time: typeof barData.time === 'number' ? fromWibChartTime(barData.time) : 0,
             open: barData.open,
             high: barData.high,
             low: barData.low,
@@ -194,7 +207,7 @@ export const PriceChartPane: React.FC<PriceChartPaneProps> = ({
       if (!b || seenTimes.has(b.time)) continue;
       seenTimes.add(b.time);
 
-      const time = b.time as UTCTimestamp;
+      const time = toWibChartTime(b.time) as UTCTimestamp;
       cleanCandles.push({
         time,
         open: b.open,
@@ -213,7 +226,12 @@ export const PriceChartPane: React.FC<PriceChartPaneProps> = ({
     candleSeries.setData(cleanCandles);
     volumeSeries.setData(cleanVolumes);
 
-    // Apply markers mapped to ascending time
+    // Synchronize mutable lastBarRef and live state
+    const last = bars.length > 0 ? bars[bars.length - 1] : null;
+    lastBarRef.current = last ? { ...last } : null;
+    setLiveBar(last ? { ...last } : null);
+
+    // Apply markers mapped to ascending time in GMT+7 WIB
     const chartMarkers: SeriesMarker<UTCTimestamp>[] = [];
     const markerTimes = new Set<string>();
 
@@ -226,7 +244,7 @@ export const PriceChartPane: React.FC<PriceChartPaneProps> = ({
       markerTimes.add(key);
 
       chartMarkers.push({
-        time: m.time as UTCTimestamp,
+        time: toWibChartTime(m.time) as UTCTimestamp,
         position: m.position,
         shape: m.shape,
         color: m.color,
@@ -278,30 +296,60 @@ export const PriceChartPane: React.FC<PriceChartPaneProps> = ({
     }
   }, [bars, markers, zones]);
 
-  // Live 1-Second Tick Pulse on rightmost bar
+  // Live 1-Second Tick Pulse & Rightmost Candle Mutation
   useEffect(() => {
     const candleSeries = candleSeriesRef.current;
     const volumeSeries = volumeSeriesRef.current;
-    if (!candleSeries || !volumeSeries || !liveTick || bars.length === 0) return;
+    if (!candleSeries || !volumeSeries || !liveTick) return;
 
-    const lastBar = bars[bars.length - 1];
-    if (!lastBar) return;
+    // Determine bucket size in seconds from displayInterval
+    const bucketSec = displayInterval === '1m' ? 60 : displayInterval === '1h' ? 3600 : 86400;
+    const tickBucketTime = Math.floor(liveTick.timestampSec / bucketSec) * bucketSec;
 
-    // Update current tip candle in-place
-    const updatedHigh = Math.max(lastBar.high, liveTick.price);
-    const updatedLow = Math.min(lastBar.low, liveTick.price);
+    if (!lastBarRef.current || tickBucketTime > lastBarRef.current.time) {
+      // New candle bucket started
+      const newBar: OHLCVBar = {
+        time: tickBucketTime,
+        open: lastBarRef.current ? lastBarRef.current.close : liveTick.price,
+        high: liveTick.price,
+        low: liveTick.price,
+        close: liveTick.price,
+        volume: 0,
+      };
+      lastBarRef.current = newBar;
+    } else {
+      // Mutate current rightmost candle bucket
+      const cur = lastBarRef.current;
+      const updatedBar: OHLCVBar = {
+        time: cur.time,
+        open: cur.open,
+        high: Math.max(cur.high, liveTick.price),
+        low: Math.min(cur.low, liveTick.price),
+        close: liveTick.price,
+        volume: cur.volume + Math.max(0, liveTick.volume24h > 0 ? 1 : 0),
+      };
+      lastBarRef.current = updatedBar;
+    }
 
-    candleSeries.update({
-      time: lastBar.time as UTCTimestamp,
-      open: lastBar.open,
-      high: updatedHigh,
-      low: updatedLow,
-      close: liveTick.price,
-    });
-  }, [liveTick, bars]);
+    if (lastBarRef.current) {
+      candleSeries.update({
+        time: toWibChartTime(lastBarRef.current.time) as UTCTimestamp,
+        open: lastBarRef.current.open,
+        high: lastBarRef.current.high,
+        low: lastBarRef.current.low,
+        close: lastBarRef.current.close,
+      });
+      volumeSeries.update({
+        time: toWibChartTime(lastBarRef.current.time) as UTCTimestamp,
+        value: lastBarRef.current.volume,
+        color: lastBarRef.current.close >= lastBarRef.current.open ? '#99F6E4' : '#FECDD3',
+      });
+      setLiveBar({ ...lastBarRef.current });
+    }
+  }, [liveTick, displayInterval]);
 
   // Active bar for header legend (crosshair bar or latest live bar)
-  const legendBar = crosshairBar ?? bars[bars.length - 1];
+  const legendBar = crosshairBar ?? liveBar ?? (bars.length > 0 ? bars[bars.length - 1] : null);
 
   return (
     <div className="flex-1 flex flex-col min-h-0 bg-white border-b border-slate-200">
@@ -317,6 +365,10 @@ export const PriceChartPane: React.FC<PriceChartPaneProps> = ({
           </span>
           <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200">
             Strategy Execution: {executionInterval.toUpperCase()} Optimized
+          </span>
+          <span className="inline-flex items-center gap-1.5 text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+            1s LIVE PULSE • {formatWibClock(liveTick?.timestampSec ?? Math.floor(Date.now() / 1000))}
           </span>
         </div>
 
