@@ -2,7 +2,6 @@ import type {
   AssetMetadata,
   ChartMarkerAnnotation,
   HorizontalZoneAnnotation,
-  WyckoffEventTag,
   WyckoffPhaseId,
 } from '../types/market';
 import type {
@@ -16,25 +15,52 @@ import {
   computeATR,
   computeSpreadRatio,
   computeVolumeRatio,
+  highestHigh,
   lowestLow,
 } from '../utils/indicators';
 
 export interface WyckoffState {
-  phase: WyckoffPhaseId;
-  tradingRangeStartBar: number;
-  tradingRangeStartTime: number;
-  supportPrice: number;
-  resistancePrice: number;
-  scPrice: number;
-  arPrice: number;
-  springDetected: boolean;
-  springLowPrice: number;
-  schematicType: 'SCHEMATIC_1_SPRING' | 'SCHEMATIC_2_HIGHER_LOW' | 'NONE';
-  inTrade: boolean;
-  entryPrice: number;
-  trailingStopPrice: number;
-  barsInCurrentPhase: number;
-  lastExitBarIndex: number;
+  readonly phase: WyckoffPhaseId;
+  readonly phaseStep:
+    | 'NONE'
+    | 'PS_FOUND'
+    | 'SC_FOUND'
+    | 'AR_FOUND'
+    | 'ST_FOUND'
+    | 'IN_PHASE_B'
+    | 'SPRING_FOUND'
+    | 'LPS_FOUND'
+    | 'SOS_FOUND'
+    | 'PHASE_E_MARKUP';
+  readonly tradingRangeStartBar: number;
+  readonly tradingRangeStartTime: number;
+  readonly supportPrice: number;
+  readonly resistancePrice: number;
+  readonly scBarIndex: number;
+  readonly scLow: number;
+  readonly scVolRatio: number;
+  readonly arBarIndex: number;
+  readonly arHigh: number;
+  readonly stBarIndex: number;
+  readonly stLow: number;
+  readonly springBarIndex: number;
+  readonly springLowPrice: number;
+  readonly schematicType: 'SCHEMATIC_1_SPRING' | 'SCHEMATIC_2_HIGHER_LOW' | 'NONE';
+  readonly barsInPhaseB: number;
+  readonly upthrustCount: number;
+  readonly phaseBDownVolumeSum: number;
+  readonly phaseBDownBarsCount: number;
+  readonly phaseBUpVolumeSum: number;
+  readonly phaseBUpBarsCount: number;
+  readonly inTrade: boolean;
+  readonly entryPrice: number;
+  readonly trailingStopPrice: number;
+  readonly highestHighSinceBreakout: number;
+  readonly lastMarkerBarIndex: number;
+  readonly lastExitBarIndex: number;
+  readonly consecutiveBreakdownCloses: number;
+  readonly lastSosBarIndex: number;
+  readonly buRetestLogged: boolean;
 }
 
 export const WyckoffAccumulationV2Strategy: IStrategy<WyckoffState> = {
@@ -49,20 +75,36 @@ export const WyckoffAccumulationV2Strategy: IStrategy<WyckoffState> = {
   init(_riskPosture: RiskPosture, _asset: AssetMetadata): WyckoffState {
     return {
       phase: 'NONE',
+      phaseStep: 'NONE',
       tradingRangeStartBar: 0,
       tradingRangeStartTime: 0,
       supportPrice: 0,
       resistancePrice: 0,
-      scPrice: 0,
-      arPrice: 0,
-      springDetected: false,
+      scBarIndex: -100,
+      scLow: 0,
+      scVolRatio: 0,
+      arBarIndex: -100,
+      arHigh: 0,
+      stBarIndex: -100,
+      stLow: 0,
+      springBarIndex: -100,
       springLowPrice: 0,
       schematicType: 'NONE',
+      barsInPhaseB: 0,
+      upthrustCount: 0,
+      phaseBDownVolumeSum: 0,
+      phaseBDownBarsCount: 0,
+      phaseBUpVolumeSum: 0,
+      phaseBUpBarsCount: 0,
       inTrade: false,
       entryPrice: 0,
       trailingStopPrice: 0,
-      barsInCurrentPhase: 0,
+      highestHighSinceBreakout: 0,
+      lastMarkerBarIndex: -100,
       lastExitBarIndex: -100,
+      consecutiveBreakdownCloses: 0,
+      lastSosBarIndex: -100,
+      buRetestLogged: false,
     };
   },
 
@@ -70,7 +112,7 @@ export const WyckoffAccumulationV2Strategy: IStrategy<WyckoffState> = {
     nextState: WyckoffState;
     output: StrategyStepOutput;
   } {
-    const { bars, currentIndex, currentBar, riskPosture } = context;
+    const { bars, currentIndex: i, currentBar, riskPosture } = context;
     const markers: ChartMarkerAnnotation[] = [];
     let activeZone: HorizontalZoneAnnotation | null = null;
     let orderIntent: StrategyOrderIntent = {
@@ -78,376 +120,637 @@ export const WyckoffAccumulationV2Strategy: IStrategy<WyckoffState> = {
       allocationPct: 0,
       stopLossPrice: null,
       takeProfitPrice: null,
-      reason: 'Observing market structure',
+      reason: 'Observing structural price action',
       phaseLabel: state.phase,
     };
 
     // Need minimal warm-up
-    if (currentIndex < 25) {
+    if (i < 20) {
       return {
-        nextState: { ...state, barsInCurrentPhase: state.barsInCurrentPhase + 1 },
+        nextState: state,
         output: { orderIntent, markers, activeZone },
       };
     }
 
+    // 1. Quantitative VSA Primitives computed at Bar i
     const atrArr = computeATR(bars, 20);
     const volRatioArr = computeVolumeRatio(bars, 20);
     const spreadRatioArr = computeSpreadRatio(bars, 20);
 
-    const atr = atrArr[currentIndex] ?? Math.max(currentBar.close * 0.02, 0.01);
-    const volRatio = volRatioArr[currentIndex] ?? 1.0;
-    const spreadRatio = spreadRatioArr[currentIndex] ?? 1.0;
-    const prevBar = bars[currentIndex - 1] ?? currentBar;
+    const atr20 = atrArr[i] ?? Math.max(currentBar.close * 0.02, 0.01);
+    const volRatio20 = volRatioArr[i] ?? 1.0;
+    const spread = Math.max(currentBar.high - currentBar.low, 1e-6);
+    const spreadRatio20 = spreadRatioArr[i] ?? 1.0;
+    const closePosition = (currentBar.close - currentBar.low) / spread;
 
-    // Multiplier thresholds based on Risk Posture
-    const stopAtrMultiplier =
-      riskPosture === 'CONSERVATIVE' ? 2.5 : riskPosture === 'AGGRESSIVE' ? 1.5 : 2.0;
+    // Prior 50-bar swing high (lookback 5..55 bars before current)
+    const priorHigh50 = highestHigh(bars, Math.max(0, i - 55), Math.max(0, i - 5));
+    const drawdownFromHighAtr = atr20 > 0 ? (priorHigh50 - currentBar.low) / atr20 : 0;
 
-    let nextPhase = state.phase;
-    let support = state.supportPrice;
-    let resistance = state.resistancePrice;
-    let sc = state.scPrice;
-    let ar = state.arPrice;
-    let springDetected = state.springDetected;
-    let springLow = state.springLowPrice;
-    let schematic = state.schematicType;
+    // Mutable working state
+    let phase = state.phase;
+    let phaseStep = state.phaseStep;
+    let tradingRangeStartBar = state.tradingRangeStartBar;
+    let tradingRangeStartTime = state.tradingRangeStartTime;
+    let supportPrice = state.supportPrice;
+    let resistancePrice = state.resistancePrice;
+    let scBarIndex = state.scBarIndex;
+    let scLow = state.scLow;
+    let scVolRatio = state.scVolRatio;
+    let arBarIndex = state.arBarIndex;
+    let arHigh = state.arHigh;
+    let stBarIndex = state.stBarIndex;
+    let stLow = state.stLow;
+    let springBarIndex = state.springBarIndex;
+    let springLowPrice = state.springLowPrice;
+    let schematicType = state.schematicType;
+    let barsInPhaseB = state.barsInPhaseB;
+    let upthrustCount = state.upthrustCount;
+    let phaseBDownVolumeSum = state.phaseBDownVolumeSum;
+    let phaseBDownBarsCount = state.phaseBDownBarsCount;
+    let phaseBUpVolumeSum = state.phaseBUpVolumeSum;
+    let phaseBUpBarsCount = state.phaseBUpBarsCount;
     let inTrade = state.inTrade;
     let entryPrice = state.entryPrice;
-    let trailingStop = state.trailingStopPrice;
-    let trStartBar = state.tradingRangeStartBar;
-    let trStartTime = state.tradingRangeStartTime;
-    let lastExit = state.lastExitBarIndex;
+    let trailingStopPrice = state.trailingStopPrice;
+    let highestHighSinceBreakout = state.highestHighSinceBreakout;
+    let lastMarkerBarIndex = state.lastMarkerBarIndex;
+    let lastExitBarIndex = state.lastExitBarIndex;
+    let consecutiveBreakdownCloses = state.consecutiveBreakdownCloses;
+    let lastSosBarIndex = state.lastSosBarIndex;
+    let buRetestLogged = state.buRetestLogged;
 
-    const addMarker = (
-      tag: WyckoffEventTag,
-      price: number,
-      pos: 'aboveBar' | 'belowBar',
-      shape: 'circle' | 'arrowUp' | 'arrowDown' | 'square',
-      color: '#0D9488' | '#E11D48' | '#2563EB' | '#D97706' | '#0F172A',
-      label: string,
-      story: string
-    ) => {
+    // -------------------------------------------------------------------------
+    // 2. Strict Phase A State Machine (Stopping the Downtrend)
+    // -------------------------------------------------------------------------
+    const cooldownBars = riskPosture === 'AGGRESSIVE' ? 6 : 10;
+    const canStartNewCycle = i - lastExitBarIndex >= cooldownBars;
+    const minDowntrendAtr = riskPosture === 'AGGRESSIVE' ? 2.8 : 3.5;
+
+    // Preliminary Support (PS)
+    if (
+      phase === 'NONE' &&
+      phaseStep === 'NONE' &&
+      canStartNewCycle &&
+      drawdownFromHighAtr >= 2.5 &&
+      volRatio20 >= 1.3 &&
+      closePosition >= 0.35 &&
+      i - lastMarkerBarIndex >= 3
+    ) {
       markers.push({
         time: currentBar.time,
-        barIndex: currentIndex,
-        phase: nextPhase,
-        tag,
-        price,
-        position: pos,
-        shape,
-        color,
-        label,
-        plainEnglishStory: story,
+        barIndex: i,
+        phase: 'PHASE_A',
+        tag: 'PS',
+        price: currentBar.low,
+        position: 'belowBar',
+        shape: 'circle',
+        color: '#2563EB',
+        label: 'PS',
+        plainEnglishStory: `Preliminary Support (PS) detected at ${currentBar.low.toFixed(2)}: Initial institutional buying halts waterfall decline on ${volRatio20.toFixed(1)}x volume.`,
       });
-    };
+      phaseStep = 'PS_FOUND';
+      lastMarkerBarIndex = i;
+    }
 
-    // Helper: Reset state after trade exit to find next accumulation cycle
-    const resetToScan = () => {
-      nextPhase = 'NONE';
-      support = 0;
-      resistance = 0;
-      sc = 0;
-      ar = 0;
-      springDetected = false;
-      springLow = 0;
-      schematic = 'NONE';
-      inTrade = false;
-      entryPrice = 0;
-      trailingStop = 0;
-      lastExit = currentIndex;
-    };
+    // Selling Climax (SC)
+    if (
+      (phase === 'NONE' || phaseStep === 'PS_FOUND') &&
+      canStartNewCycle &&
+      drawdownFromHighAtr >= minDowntrendAtr
+    ) {
+      const lookbackLow = lowestLow(bars, Math.max(0, i - 25), Math.max(0, i - 1));
+      const isNewLow = currentBar.low <= lookbackLow || i <= scBarIndex + 5;
+      const isClimaxVolume =
+        (volRatio20 >= 1.65 && spreadRatio20 >= 1.25) ||
+        (volRatio20 >= 1.8 && closePosition >= 0.30);
 
-    // -------------------------------------------------------------
-    // State Machine: NONE -> PHASE_A -> PHASE_B -> PHASE_C -> PHASE_D -> PHASE_E
-    // -------------------------------------------------------------
+      if (isNewLow && isClimaxVolume) {
+        scBarIndex = i;
+        scLow = currentBar.low;
+        supportPrice = currentBar.low;
+        scVolRatio = volRatio20;
+        tradingRangeStartBar = i;
+        tradingRangeStartTime = currentBar.time;
+        phase = 'PHASE_A';
+        phaseStep = 'SC_FOUND';
 
-    if (nextPhase === 'NONE') {
-      // Look for Selling Climax (SC) after downtrend
-      // Downtrend check: 20-bar lowest low or low below 20-bar SMA
-      const isLowestIn20 = currentBar.low <= lowestLow(bars, currentIndex - 20, currentIndex - 1);
-      const isClimacticVolume = volRatio >= 1.6;
-      const isWideSpread = spreadRatio >= 1.3;
-      const cooldownPassed = currentIndex - lastExit > 8;
-
-      if (isLowestIn20 && isClimacticVolume && isWideSpread && cooldownPassed) {
-        nextPhase = 'PHASE_A';
-        support = currentBar.low;
-        sc = currentBar.low;
-        resistance = currentBar.high + atr;
-        ar = resistance;
-        trStartBar = currentIndex;
-        trStartTime = currentBar.time;
-
-        addMarker(
-          'SC',
-          currentBar.low,
-          'belowBar',
-          'square',
-          '#E11D48',
-          'SC',
-          `Selling Climax (SC) detected: heavy volume ${volRatio.toFixed(1)}x with wide spread ${spreadRatio.toFixed(1)}x stopping the prior decline.`
-        );
-      }
-    } else if (nextPhase === 'PHASE_A') {
-      // Establish Automatic Rally (AR) and Secondary Test (ST)
-      if (currentBar.high > resistance) {
-        resistance = currentBar.high;
-        ar = currentBar.high;
-      }
-
-      // Check for Secondary Test (ST) holding above or near SC low on reduced volume
-      const retestingSupport = currentBar.low <= support * 1.02 && currentBar.low >= support * 0.97;
-      const volumeDrying = volRatio < 1.3;
-
-      if (retestingSupport && volumeDrying && currentIndex - trStartBar >= 3) {
-        nextPhase = 'PHASE_B';
-        addMarker(
-          'ST',
-          currentBar.low,
-          'belowBar',
-          'circle',
-          '#D97706',
-          'ST',
-          `Secondary Test (ST) successful: price tested SC support ($${support.toFixed(2)}) with contracted volume (${volRatio.toFixed(1)}x). Trading Range established.`
-        );
-      } else if (currentIndex - trStartBar > 25) {
-        // Prolonged without ST, advance or re-evaluate
-        nextPhase = 'PHASE_B';
-      }
-    } else if (nextPhase === 'PHASE_B') {
-      // Trading Range supply absorption. Check for Upthrust (UT)
-      if (currentBar.high > resistance && currentBar.close < resistance) {
-        addMarker(
-          'UT',
-          currentBar.high,
-          'aboveBar',
-          'arrowDown',
-          '#D97706',
-          'UT',
-          `Upthrust (UT) in Phase B: temporary probe above resistance ($${resistance.toFixed(2)}) rejected back into Trading Range.`
-        );
-      }
-
-      const trDuration = currentIndex - trStartBar;
-
-      // Check transition to Phase C:
-      // Case 1: Schematic #1 (Spring) - dip below support that reverses back inside
-      const dippedBelowSupport = currentBar.low < support && currentBar.close >= support * 0.985;
-      const springDryingVolume = volRatio <= 1.5;
-
-      if (trDuration >= 8 && dippedBelowSupport && springDryingVolume) {
-        nextPhase = 'PHASE_C';
-        schematic = 'SCHEMATIC_1_SPRING';
-        springDetected = true;
-        springLow = currentBar.low;
-        support = Math.min(support, currentBar.low); // Update bottom of TR
-
-        addMarker(
-          'SPRING',
-          currentBar.low,
-          'belowBar',
-          'arrowUp',
-          '#0D9488',
-          'SPRING',
-          `Wyckoff Spring (Schematic #1): terminal shakeout below support to $${currentBar.low.toFixed(2)} with light volume. Smart money absorbing floating supply.`
-        );
-
-        // Immediate Long entry on Spring confirmation
-        if (!inTrade) {
-          inTrade = true;
-          entryPrice = currentBar.close;
-          trailingStop = springLow - atr * 0.5;
-
-          orderIntent = {
-            action: 'ENTER_LONG',
-            allocationPct: riskPosture === 'AGGRESSIVE' ? 1.0 : 0.9,
-            stopLossPrice: trailingStop,
-            takeProfitPrice: resistance + atr * 4,
-            reason: 'Wyckoff Phase C Spring Entry (Schematic #1)',
-            phaseLabel: 'PHASE_C',
-          };
-
-          addMarker(
-            'ENTRY',
-            currentBar.close,
-            'belowBar',
-            'arrowUp',
-            '#0D9488',
-            'BUY',
-            `Long Entry on Phase C Spring confirmation at $${currentBar.close.toFixed(2)}. Initial stop below Spring low ($${trailingStop.toFixed(2)}).`
-          );
+        if (i - lastMarkerBarIndex >= 3) {
+          markers.push({
+            time: currentBar.time,
+            barIndex: i,
+            phase: 'PHASE_A',
+            tag: 'SC',
+            price: currentBar.low,
+            position: 'belowBar',
+            shape: 'arrowUp',
+            color: '#E11D48',
+            label: 'SC',
+            plainEnglishStory: `Selling Climax (SC) at ${currentBar.low.toFixed(2)}: Panic public selling absorbed by institutional smart money on ${volRatio20.toFixed(1)}x volume. Trading range floor established.`,
+          });
+          lastMarkerBarIndex = i;
         }
-      } else if (trDuration >= 12) {
-        // Case 2: Schematic #2 (Higher-Low LPS without Spring)
-        // Price forms a higher low in the lower half of the TR with dry volume, then breaks upward
-        const midTr = (support + resistance) / 2;
-        const inLowerHalf = currentBar.low > support && currentBar.low < midTr;
-        const dryVolume = volRatio < 1.0;
-        const bullishBar = currentBar.close > currentBar.open && currentBar.close > prevBar.high;
-
-        if (inLowerHalf && dryVolume && bullishBar) {
-          nextPhase = 'PHASE_C';
-          schematic = 'SCHEMATIC_2_HIGHER_LOW';
-          addMarker(
-            'LPS',
-            currentBar.low,
-            'belowBar',
-            'circle',
-            '#2563EB',
-            'LPS',
-            `Wyckoff Higher-Low LPS (Schematic #2): higher low established at $${currentBar.low.toFixed(2)} with dry volume without a Spring. Institutional accumulation complete.`
-          );
-
-          if (!inTrade) {
-            inTrade = true;
-            entryPrice = currentBar.close;
-            trailingStop = currentBar.low - atr * 0.75;
-
-            orderIntent = {
-              action: 'ENTER_LONG',
-              allocationPct: riskPosture === 'AGGRESSIVE' ? 1.0 : 0.85,
-              stopLossPrice: trailingStop,
-              takeProfitPrice: resistance + atr * 3.5,
-              reason: 'Wyckoff Phase C Higher-Low LPS Entry (Schematic #2)',
-              phaseLabel: 'PHASE_C',
-            };
-
-            addMarker(
-              'ENTRY',
-              currentBar.close,
-              'belowBar',
-              'arrowUp',
-              '#0D9488',
-              'BUY',
-              `Long Entry on Schematic #2 Higher-Low at $${currentBar.close.toFixed(2)}. Stop at $${trailingStop.toFixed(2)}.`
-            );
-          }
-        }
-      }
-    } else if (nextPhase === 'PHASE_C') {
-      // Moving out of Phase C into Phase D (Sign of Strength - SOS)
-      if (currentBar.close > resistance) {
-        nextPhase = 'PHASE_D';
-        addMarker(
-          'SOS',
-          currentBar.high,
-          'aboveBar',
-          'arrowUp',
-          '#0D9488',
-          'SOS',
-          `Sign of Strength (SOS): decisive breakout above Trading Range resistance ($${resistance.toFixed(2)}) with expanding spread.`
-        );
-
-        // Raise trailing stop to break-even or support
-        trailingStop = Math.max(trailingStop, support);
-      } else if (inTrade && currentBar.close < trailingStop) {
-        // Stop hit
-        orderIntent = {
-          action: 'EXIT_LONG',
-          allocationPct: 1,
-          stopLossPrice: null,
-          takeProfitPrice: null,
-          reason: 'Phase C setup invalidated by break below stop level',
-          phaseLabel: 'PHASE_C',
-        };
-        resetToScan();
-      }
-    } else if (nextPhase === 'PHASE_D') {
-      // Phase D: Markup inside/above range, looking for Back-Up (BU) to TR
-      const pullBackToResistance =
-        currentBar.low <= resistance * 1.02 && currentBar.close >= resistance * 0.98;
-
-      if (pullBackToResistance && volRatio < 1.2) {
-        nextPhase = 'PHASE_E';
-        addMarker(
-          'BU',
-          currentBar.low,
-          'belowBar',
-          'circle',
-          '#2563EB',
-          'BU',
-          `Back-Up to TR Resistance (BU): normal test of breakout level ($${resistance.toFixed(2)}) on light volume, confirming support.`
-        );
-
-        // Scale-in or advance trailing stop
-        trailingStop = Math.max(trailingStop, resistance - atr * 1.0);
-      } else if (currentBar.close > resistance + atr * 2) {
-        nextPhase = 'PHASE_E';
-      }
-
-      if (inTrade && currentBar.close < trailingStop) {
-        orderIntent = {
-          action: 'EXIT_LONG',
-          allocationPct: 1,
-          stopLossPrice: null,
-          takeProfitPrice: null,
-          reason: 'Phase D trailing stop hit',
-          phaseLabel: 'PHASE_D',
-        };
-        resetToScan();
-      }
-    } else if (nextPhase === 'PHASE_E') {
-      // Phase E: Full Trend Markup! Trail ATR stop dynamically
-      const newStop = currentBar.close - atr * stopAtrMultiplier;
-      if (newStop > trailingStop) {
-        trailingStop = newStop;
-      }
-
-      // Exit condition: Close below dynamic ATR trailing stop
-      if (inTrade && (currentBar.close < trailingStop || currentBar.low < trailingStop)) {
-        orderIntent = {
-          action: 'EXIT_LONG',
-          allocationPct: 1,
-          stopLossPrice: null,
-          takeProfitPrice: null,
-          reason: `Phase E trend exhaustion: Trailing ATR stop triggered at $${trailingStop.toFixed(2)}`,
-          phaseLabel: 'PHASE_E',
-        };
-        resetToScan();
-      } else if (currentIndex - trStartBar > 120 && currentBar.close < prevBar.close) {
-        // If trade has run for >120 bars and momentum slows, protect gains
-        const tightStop = currentBar.close - atr * 1.5;
-        if (tightStop > trailingStop) trailingStop = tightStop;
       }
     }
 
-    // Produce Active Zone Annotation if in active TR
-    if (support > 0 && resistance > support && nextPhase !== 'NONE') {
+    // Deeper panic low shifting before AR
+    if (phaseStep === 'SC_FOUND' && i <= scBarIndex + 6 && currentBar.low < scLow) {
+      scBarIndex = i;
+      scLow = currentBar.low;
+      supportPrice = currentBar.low;
+      scVolRatio = Math.max(scVolRatio, volRatio20);
+    }
+
+    // Automatic Rally (AR)
+    if (phaseStep === 'SC_FOUND' && i >= scBarIndex + 3 && i <= scBarIndex + 22) {
+      const highestSinceSc = highestHigh(bars, scBarIndex + 1, i);
+      const rallyHeightAtr = (highestSinceSc - scLow) / atr20;
+      const isPullingBack =
+        currentBar.close < currentBar.open ||
+        currentBar.high < (bars[i - 1]?.high ?? currentBar.high);
+
+      if (rallyHeightAtr >= 1.8 && isPullingBack) {
+        arHigh = highestSinceSc;
+        resistancePrice = arHigh;
+        arBarIndex = i;
+        phaseStep = 'AR_FOUND';
+
+        if (i - lastMarkerBarIndex >= 3) {
+          markers.push({
+            time: currentBar.time,
+            barIndex: i,
+            phase: 'PHASE_A',
+            tag: 'AR',
+            price: arHigh,
+            position: 'aboveBar',
+            shape: 'arrowDown',
+            color: '#0D9488',
+            label: 'AR',
+            plainEnglishStory: `Automatic Rally (AR) to ${arHigh.toFixed(2)}: Sharp +${((arHigh - scLow) / scLow * 100).toFixed(1)}% bounce on short covering establishes Trading Range ceiling.`,
+          });
+          lastMarkerBarIndex = i;
+        }
+      }
+    }
+
+    // Secondary Test (ST)
+    if (phaseStep === 'AR_FOUND' && i >= arBarIndex + 2) {
+      const trHeight = Math.max(resistancePrice - supportPrice, atr20);
+      const isRetestingSupport =
+        currentBar.low <= supportPrice + 0.35 * trHeight &&
+        currentBar.low >= supportPrice - 0.50 * atr20;
+      const isSwingLowTurn = currentBar.close > currentBar.open || closePosition >= 0.50;
+      const isDryVolume = volRatio20 < scVolRatio * 0.95;
+
+      if (isRetestingSupport && isSwingLowTurn && isDryVolume) {
+        stBarIndex = i;
+        stLow = currentBar.low;
+        supportPrice = Math.min(scLow, currentBar.low);
+        phase = 'PHASE_B';
+        phaseStep = 'IN_PHASE_B';
+        barsInPhaseB = 0;
+        upthrustCount = 0;
+        phaseBDownVolumeSum = 0;
+        phaseBDownBarsCount = 0;
+        phaseBUpVolumeSum = 0;
+        phaseBUpBarsCount = 0;
+
+        if (i - lastMarkerBarIndex >= 3) {
+          markers.push({
+            time: currentBar.time,
+            barIndex: i,
+            phase: 'PHASE_A',
+            tag: 'ST',
+            price: currentBar.low,
+            position: 'belowBar',
+            shape: 'circle',
+            color: '#2563EB',
+            label: 'ST',
+            plainEnglishStory: `Secondary Test (ST) at ${currentBar.low.toFixed(2)}: Retest of support holds on contracting volume (${volRatio20.toFixed(1)}x), confirming supply absorption. Entering Phase B.`,
+          });
+          lastMarkerBarIndex = i;
+        }
+      }
+    }
+
+    // -------------------------------------------------------------------------
+    // 3. Strict Phase B (Building the Cause & Supply Absorption)
+    // -------------------------------------------------------------------------
+    if (phase === 'PHASE_B') {
+      barsInPhaseB += 1;
+      const trHeight = Math.max(resistancePrice - supportPrice, atr20);
+
+      // Track volume absorption
+      if (currentBar.close < currentBar.open) {
+        phaseBDownVolumeSum += currentBar.volume;
+        phaseBDownBarsCount += 1;
+      } else {
+        phaseBUpVolumeSum += currentBar.volume;
+        phaseBUpBarsCount += 1;
+      }
+
+      // Catastrophic breakdown reset
+      if (currentBar.close < supportPrice - 1.6 * atr20) {
+        consecutiveBreakdownCloses += 1;
+        if (consecutiveBreakdownCloses >= 2) {
+          phase = 'NONE';
+          phaseStep = 'NONE';
+          consecutiveBreakdownCloses = 0;
+          if (inTrade) {
+            orderIntent = {
+              action: 'EXIT_LONG',
+              allocationPct: 0,
+              stopLossPrice: null,
+              takeProfitPrice: null,
+              reason: 'Catastrophic Trading Range Breakdown: Support invalidated',
+              phaseLabel: 'NONE',
+            };
+            inTrade = false;
+            lastExitBarIndex = i;
+          }
+        }
+      } else {
+        consecutiveBreakdownCloses = 0;
+      }
+
+      // Upthrust (UT)
+      if (
+        upthrustCount < 2 &&
+        currentBar.high > resistancePrice + 0.15 * atr20 &&
+        currentBar.close < resistancePrice &&
+        i - lastMarkerBarIndex >= 3
+      ) {
+        markers.push({
+          time: currentBar.time,
+          barIndex: i,
+          phase: 'PHASE_B',
+          tag: 'UT',
+          price: currentBar.high,
+          position: 'aboveBar',
+          shape: 'square',
+          color: '#D97706',
+          label: 'UT',
+          plainEnglishStory: `Upthrust (UT) at ${currentBar.high.toFixed(2)}: False breakout above resistance tests overhead supply and falls back into the Trading Range.`,
+        });
+        upthrustCount += 1;
+        lastMarkerBarIndex = i;
+      }
+
+      // Phase C Trigger Readiness
+      const minCauseBars = riskPosture === 'AGGRESSIVE' ? 6 : riskPosture === 'BALANCED' ? 10 : 14;
+
+      if (barsInPhaseB >= minCauseBars) {
+        // Path A: Schematic #1 Spring (Bear Trap below support)
+        const isPiercingSupport =
+          currentBar.low < supportPrice - 0.05 * atr20 &&
+          currentBar.low >= supportPrice - 1.40 * atr20;
+        const isSpringReclaim =
+          currentBar.close >= supportPrice &&
+          closePosition >= 0.52 &&
+          volRatio20 <= 1.70;
+
+        if (isPiercingSupport && isSpringReclaim) {
+          springBarIndex = i;
+          springLowPrice = currentBar.low;
+          schematicType = 'SCHEMATIC_1_SPRING';
+          phase = 'PHASE_D';
+          phaseStep = 'SPRING_FOUND';
+
+          if (i - lastMarkerBarIndex >= 3) {
+            markers.push({
+              time: currentBar.time,
+              barIndex: i,
+              phase: 'PHASE_C',
+              tag: 'SPRING',
+              price: currentBar.low,
+              position: 'belowBar',
+              shape: 'arrowUp',
+              color: '#0D9488',
+              label: 'SPRING',
+              plainEnglishStory: `Spring (Schematic #1) at ${currentBar.low.toFixed(2)}: Shakeout beneath ${supportPrice.toFixed(2)} support traps late shorts. Strong close above support triggers Phase C accumulation entry.`,
+            });
+            markers.push({
+              time: currentBar.time,
+              barIndex: i,
+              phase: 'PHASE_C',
+              tag: 'ENTRY',
+              price: currentBar.close,
+              position: 'belowBar',
+              shape: 'arrowUp',
+              color: '#0D9488',
+              label: 'BUY',
+              plainEnglishStory: `Phase C Entry: Long position initiated at ${currentBar.close.toFixed(2)} on Schematic #1 Spring reclaim.`,
+            });
+            lastMarkerBarIndex = i;
+          }
+
+          const sl = currentBar.low - 1.0 * atr20;
+          orderIntent = {
+            action: 'ENTER_LONG',
+            allocationPct: riskPosture === 'CONSERVATIVE' ? 0.50 : riskPosture === 'BALANCED' ? 0.65 : 0.80,
+            stopLossPrice: sl,
+            takeProfitPrice: resistancePrice + 2.0 * atr20,
+            reason: 'Wyckoff Schematic #1 Spring: Bear trap below support reclaimed on dry absorption volume',
+            phaseLabel: 'PHASE_C',
+          };
+          inTrade = true;
+          entryPrice = currentBar.close;
+          trailingStopPrice = sl;
+        }
+
+        // Path B: Schematic #2 Higher-Low LPS (Without a Spring)
+        const prevBar = bars[i - 1] ?? currentBar;
+        const inLowerMidTr =
+          currentBar.low > supportPrice + 0.04 * trHeight &&
+          currentBar.low <= supportPrice + 0.55 * trHeight;
+
+        // Rolling 3-bar volume dry up
+        const b1 = bars[i - 1]?.volume ?? currentBar.volume;
+        const b2 = bars[i - 2]?.volume ?? currentBar.volume;
+        const v3Avg = (currentBar.volume + b1 + b2) / 3;
+        const avg20Vol =
+          bars.slice(Math.max(0, i - 19), i + 1).reduce((s, b) => s + b.volume, 0) / 20;
+        const isVolumeDryUp = v3Avg <= 0.88 * avg20Vol || volRatio20 <= 0.85;
+
+        // Bullish Demand Reversal Bar
+        const isDemandReversal =
+          currentBar.close > currentBar.open &&
+          closePosition >= 0.60 &&
+          currentBar.close > prevBar.high;
+
+        if (!isPiercingSupport && inLowerMidTr && isVolumeDryUp && isDemandReversal) {
+          schematicType = 'SCHEMATIC_2_HIGHER_LOW';
+          phase = 'PHASE_D';
+          phaseStep = 'LPS_FOUND';
+
+          if (i - lastMarkerBarIndex >= 3) {
+            markers.push({
+              time: currentBar.time,
+              barIndex: i,
+              phase: 'PHASE_C',
+              tag: 'LPS',
+              price: currentBar.low,
+              position: 'belowBar',
+              shape: 'arrowUp',
+              color: '#0D9488',
+              label: 'LPS #2',
+              plainEnglishStory: `Last Point of Support (Schematic #2) at ${currentBar.low.toFixed(2)}: High-demand test holds well above support on dry volume (${volRatio20.toFixed(1)}x), confirming supply exhaustion.`,
+            });
+            markers.push({
+              time: currentBar.time,
+              barIndex: i,
+              phase: 'PHASE_C',
+              tag: 'ENTRY',
+              price: currentBar.close,
+              position: 'belowBar',
+              shape: 'arrowUp',
+              color: '#0D9488',
+              label: 'BUY',
+              plainEnglishStory: `Phase C Entry: Long position initiated at ${currentBar.close.toFixed(2)} on Schematic #2 Higher-Low LPS.`,
+            });
+            lastMarkerBarIndex = i;
+          }
+
+          const sl = Math.min(supportPrice - 0.4 * atr20, currentBar.low - 1.1 * atr20);
+          orderIntent = {
+            action: 'ENTER_LONG',
+            allocationPct: riskPosture === 'CONSERVATIVE' ? 0.55 : riskPosture === 'BALANCED' ? 0.70 : 0.85,
+            stopLossPrice: sl,
+            takeProfitPrice: resistancePrice + 2.0 * atr20,
+            reason: 'Wyckoff Schematic #2 LPS: Higher-low test with volume dry-up and demand reversal',
+            phaseLabel: 'PHASE_C',
+          };
+          inTrade = true;
+          entryPrice = currentBar.close;
+          trailingStopPrice = sl;
+        }
+      }
+    }
+
+    // -------------------------------------------------------------------------
+    // 4. Strict Phase D (SOS & LPS Scale-In)
+    // -------------------------------------------------------------------------
+    if (phase === 'PHASE_D') {
+      const trHeight = Math.max(resistancePrice - supportPrice, atr20);
+
+      // Sign of Strength (SOS)
+      if (
+        phaseStep !== 'SOS_FOUND' &&
+        (currentBar.close >= resistancePrice - 0.35 * trHeight || currentBar.close > resistancePrice) &&
+        spreadRatio20 >= 1.10 &&
+        volRatio20 >= 1.10 &&
+        closePosition >= 0.62
+      ) {
+        phaseStep = 'SOS_FOUND';
+        lastSosBarIndex = i;
+
+        if (i - lastMarkerBarIndex >= 3) {
+          markers.push({
+            time: currentBar.time,
+            barIndex: i,
+            phase: 'PHASE_D',
+            tag: 'SOS',
+            price: currentBar.high,
+            position: 'aboveBar',
+            shape: 'arrowUp',
+            color: '#0D9488',
+            label: 'SOS',
+            plainEnglishStory: `Sign of Strength (SOS) at ${currentBar.high.toFixed(2)}: Decisive institutional markup on expanding volume (${volRatio20.toFixed(1)}x) pushes toward range boundary.`,
+          });
+          lastMarkerBarIndex = i;
+        }
+      }
+
+      // Phase D LPS Scale-In
+      const prevBar = bars[i - 1] ?? currentBar;
+      if (
+        phaseStep === 'SOS_FOUND' &&
+        i >= lastSosBarIndex + 2 &&
+        i <= lastSosBarIndex + 10 &&
+        volRatio20 <= 0.95 &&
+        currentBar.low >= supportPrice + 0.45 * trHeight &&
+        currentBar.close > prevBar.high
+      ) {
+        if (i - lastMarkerBarIndex >= 3) {
+          markers.push({
+            time: currentBar.time,
+            barIndex: i,
+            phase: 'PHASE_D',
+            tag: 'LPS',
+            price: currentBar.low,
+            position: 'belowBar',
+            shape: 'circle',
+            color: '#2563EB',
+            label: 'LPS',
+            plainEnglishStory: `Phase D LPS at ${currentBar.low.toFixed(2)}: Shallow pullback holds above Trading Range midpoint on drying volume. Scaling in.`,
+          });
+          markers.push({
+            time: currentBar.time,
+            barIndex: i,
+            phase: 'PHASE_D',
+            tag: 'ENTRY',
+            price: currentBar.close,
+            position: 'belowBar',
+            shape: 'arrowUp',
+            color: '#0D9488',
+            label: inTrade ? 'ADD' : 'BUY',
+            plainEnglishStory: inTrade
+              ? `Phase D Scale-In: Added to long position at ${currentBar.close.toFixed(2)}.`
+              : `Phase D Entry: Initiated long position at ${currentBar.close.toFixed(2)}.`,
+          });
+          lastMarkerBarIndex = i;
+        }
+
+        const sl = currentBar.low - 0.9 * atr20;
+        trailingStopPrice = Math.max(trailingStopPrice, sl);
+
+        if (inTrade) {
+          orderIntent = {
+            action: 'ADD_LONG',
+            allocationPct: 0.95,
+            stopLossPrice: trailingStopPrice,
+            takeProfitPrice: null,
+            reason: 'Phase D LPS Scale-in: Pullback holds above TR midpoint on contracting volume',
+            phaseLabel: 'PHASE_D',
+          };
+        } else {
+          inTrade = true;
+          entryPrice = currentBar.close;
+          orderIntent = {
+            action: 'ENTER_LONG',
+            allocationPct: 0.75,
+            stopLossPrice: trailingStopPrice,
+            takeProfitPrice: null,
+            reason: 'Phase D LPS Entry: Pullback holds above TR midpoint on contracting volume',
+            phaseLabel: 'PHASE_D',
+          };
+        }
+      }
+
+      // Breakout to Phase E
+      if (currentBar.close > resistancePrice + 0.25 * atr20) {
+        phase = 'PHASE_E';
+        phaseStep = 'PHASE_E_MARKUP';
+        highestHighSinceBreakout = currentBar.high;
+        trailingStopPrice = Math.max(trailingStopPrice, currentBar.high - 2.6 * atr20);
+      }
+    }
+
+    // -------------------------------------------------------------------------
+    // 5. Strict Phase E (Open-Market Markup Trend & Chandelier Trailing Exit)
+    // -------------------------------------------------------------------------
+    if (phase === 'PHASE_E') {
+      highestHighSinceBreakout = Math.max(highestHighSinceBreakout, currentBar.high);
+
+      // Chandelier Exit trailing stop
+      const newTrailingStop = highestHighSinceBreakout - 2.6 * atr20;
+      trailingStopPrice = Math.max(trailingStopPrice, newTrailingStop);
+
+      // Back-Up (BU) marker on first shallow retest
+      if (
+        !buRetestLogged &&
+        currentBar.low <= resistancePrice + 0.15 * atr20 &&
+        currentBar.close >= resistancePrice &&
+        i - lastMarkerBarIndex >= 3
+      ) {
+        markers.push({
+          time: currentBar.time,
+          barIndex: i,
+          phase: 'PHASE_E',
+          tag: 'BU',
+          price: currentBar.low,
+          position: 'belowBar',
+          shape: 'arrowUp',
+          color: '#2563EB',
+          label: 'BU',
+          plainEnglishStory: `Back Up (BU) at ${currentBar.low.toFixed(2)}: Orderly retest treats prior resistance (${resistancePrice.toFixed(2)}) as new support. Markup confirmed.`,
+        });
+        buRetestLogged = true;
+        lastMarkerBarIndex = i;
+      }
+
+      // Chandelier Trailing Exit
+      if (inTrade && currentBar.close < trailingStopPrice) {
+        orderIntent = {
+          action: 'EXIT_LONG',
+          allocationPct: 0,
+          stopLossPrice: null,
+          takeProfitPrice: null,
+          reason: 'Phase E Chandelier Trailing Stop triggered; locking in markup trend alpha',
+          phaseLabel: 'PHASE_E',
+        };
+        inTrade = false;
+        phase = 'NONE';
+        phaseStep = 'NONE';
+        lastExitBarIndex = i;
+
+        if (i - lastMarkerBarIndex >= 3) {
+          markers.push({
+            time: currentBar.time,
+            barIndex: i,
+            phase: 'PHASE_E',
+            tag: 'EXIT',
+            price: currentBar.close,
+            position: 'aboveBar',
+            shape: 'arrowDown',
+            color: '#E11D48',
+            label: 'EXIT',
+            plainEnglishStory: `Macro Trend Exit at ${currentBar.close.toFixed(2)}: Chandelier stop crossed; locking in gains and resetting for next accumulation cycle.`,
+          });
+          lastMarkerBarIndex = i;
+        }
+      }
+    }
+
+    // Active Trading Range Box Annotation
+    if (supportPrice > 0 && resistancePrice > supportPrice && phase !== 'NONE') {
       activeZone = {
-        id: `wyckoff-tr-${trStartTime}`,
-        startTime: trStartTime,
+        id: `tr-${tradingRangeStartBar}`,
+        startTime: tradingRangeStartTime,
         endTime: currentBar.time,
-        supportPrice: support,
-        resistancePrice: resistance,
-        label: `Wyckoff TR [${support.toFixed(2)} - ${resistance.toFixed(2)}] (${schematic === 'SCHEMATIC_1_SPRING' ? 'Sch #1 Spring' : schematic === 'SCHEMATIC_2_HIGHER_LOW' ? 'Sch #2 LPS' : 'Base'})`,
+        supportPrice,
+        resistancePrice,
+        label: `Wyckoff TR [${supportPrice.toFixed(2)} - ${resistancePrice.toFixed(2)}]`,
       };
     }
 
     const nextState: WyckoffState = {
-      phase: nextPhase,
-      tradingRangeStartBar: trStartBar,
-      tradingRangeStartTime: trStartTime,
-      supportPrice: support,
-      resistancePrice: resistance,
-      scPrice: sc,
-      arPrice: ar,
-      springDetected,
-      springLowPrice: springLow,
-      schematicType: schematic,
+      phase,
+      phaseStep,
+      tradingRangeStartBar,
+      tradingRangeStartTime,
+      supportPrice,
+      resistancePrice,
+      scBarIndex,
+      scLow,
+      scVolRatio,
+      arBarIndex,
+      arHigh,
+      stBarIndex,
+      stLow,
+      springBarIndex,
+      springLowPrice,
+      schematicType,
+      barsInPhaseB,
+      upthrustCount,
+      phaseBDownVolumeSum,
+      phaseBDownBarsCount,
+      phaseBUpVolumeSum,
+      phaseBUpBarsCount,
       inTrade,
       entryPrice,
-      trailingStopPrice: trailingStop,
-      barsInCurrentPhase: nextPhase === state.phase ? state.barsInCurrentPhase + 1 : 1,
-      lastExitBarIndex: lastExit,
+      trailingStopPrice,
+      highestHighSinceBreakout,
+      lastMarkerBarIndex,
+      lastExitBarIndex,
+      consecutiveBreakdownCloses,
+      lastSosBarIndex,
+      buRetestLogged,
     };
 
     return {
       nextState,
-      output: {
-        orderIntent,
-        markers,
-        activeZone,
-      },
+      output: { orderIntent, markers, activeZone },
     };
   },
 };
