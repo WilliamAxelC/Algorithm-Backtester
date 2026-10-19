@@ -1,9 +1,25 @@
 import type { AssetMetadata } from '../types/market';
 
+const HNT_PERP_METADATA: AssetMetadata = {
+  symbol: 'HNTUSDTPERP',
+  providerSymbol: 'HNTUSDT',
+  dataSource: 'BINANCE',
+  name: 'Helium Perpetual Futures',
+  assetClass: 'CRYPTO',
+  exchange: 'BINANCE',
+  currency: 'USD',
+  lotSize: 0.001,
+  buyFeeBps: 5,
+  sellFeeBps: 5,
+  defaultSlippageBps: 5,
+  defaultInitialCapital: 10_000,
+  sector: 'IoT & DePIN',
+};
+
 export const ASSET_CATALOG: readonly AssetMetadata[] = [
-  // ==========================================
-  // 1. All 45 Indonesian IDX LQ45 Constituents
-  // ==========================================
+  // =========================================================================
+  // 1. Indonesian IDX LQ45 Constituents (45 Assets)
+  // =========================================================================
   {
     symbol: 'ACES.JK',
     providerSymbol: 'ACES.JK',
@@ -680,9 +696,9 @@ export const ASSET_CATALOG: readonly AssetMetadata[] = [
     sector: 'Industrials / Heavy Equipment',
   },
 
-  // ==========================================
-  // 2. 20 Liquid US Equities & ETFs
-  // ==========================================
+  // =========================================================================
+  // 2. Liquid US Equities & ETFs (20 Assets)
+  // =========================================================================
   {
     symbol: 'NVDA',
     providerSymbol: 'NVDA',
@@ -694,9 +710,9 @@ export const ASSET_CATALOG: readonly AssetMetadata[] = [
     lotSize: 1,
     buyFeeBps: 2,
     sellFeeBps: 2,
-    defaultSlippageBps: 2,
+    defaultSlippageBps: 5,
     defaultInitialCapital: 25_000,
-    sector: 'Technology / Semiconductors',
+    sector: 'Semiconductors',
   },
   {
     symbol: 'AAPL',
@@ -709,9 +725,9 @@ export const ASSET_CATALOG: readonly AssetMetadata[] = [
     lotSize: 1,
     buyFeeBps: 2,
     sellFeeBps: 2,
-    defaultSlippageBps: 2,
+    defaultSlippageBps: 5,
     defaultInitialCapital: 25_000,
-    sector: 'Technology / Hardware',
+    sector: 'Consumer Electronics',
   },
   {
     symbol: 'MSFT',
@@ -724,9 +740,9 @@ export const ASSET_CATALOG: readonly AssetMetadata[] = [
     lotSize: 1,
     buyFeeBps: 2,
     sellFeeBps: 2,
-    defaultSlippageBps: 2,
+    defaultSlippageBps: 5,
     defaultInitialCapital: 25_000,
-    sector: 'Technology / Software',
+    sector: 'Software & Cloud',
   },
   {
     symbol: 'AMZN',
@@ -739,24 +755,24 @@ export const ASSET_CATALOG: readonly AssetMetadata[] = [
     lotSize: 1,
     buyFeeBps: 2,
     sellFeeBps: 2,
-    defaultSlippageBps: 2,
+    defaultSlippageBps: 5,
     defaultInitialCapital: 25_000,
-    sector: 'Consumer Discretionary / E-Commerce',
+    sector: 'E-Commerce & Cloud',
   },
   {
     symbol: 'GOOGL',
     providerSymbol: 'GOOGL',
     dataSource: 'YAHOO',
-    name: 'Alphabet Inc. (Class A)',
+    name: 'Alphabet Inc.',
     assetClass: 'US_EQUITY',
     exchange: 'NASDAQ',
     currency: 'USD',
     lotSize: 1,
     buyFeeBps: 2,
     sellFeeBps: 2,
-    defaultSlippageBps: 2,
+    defaultSlippageBps: 5,
     defaultInitialCapital: 25_000,
-    sector: 'Communication Services / Internet',
+    sector: 'Internet & AI',
   },
   {
     symbol: 'META',
@@ -769,9 +785,9 @@ export const ASSET_CATALOG: readonly AssetMetadata[] = [
     lotSize: 1,
     buyFeeBps: 2,
     sellFeeBps: 2,
-    defaultSlippageBps: 2,
+    defaultSlippageBps: 5,
     defaultInitialCapital: 25_000,
-    sector: 'Communication Services / Social Media',
+    sector: 'Social Media & Tech',
   },
   {
     symbol: 'TSLA',
@@ -784,9 +800,9 @@ export const ASSET_CATALOG: readonly AssetMetadata[] = [
     lotSize: 1,
     buyFeeBps: 2,
     sellFeeBps: 2,
-    defaultSlippageBps: 2,
+    defaultSlippageBps: 5,
     defaultInitialCapital: 25_000,
-    sector: 'Consumer Discretionary / EV',
+    sector: 'Automotive & Clean Energy',
   },
   {
     symbol: 'AMD',
@@ -799,9 +815,9 @@ export const ASSET_CATALOG: readonly AssetMetadata[] = [
     lotSize: 1,
     buyFeeBps: 2,
     sellFeeBps: 2,
-    defaultSlippageBps: 2,
+    defaultSlippageBps: 5,
     defaultInitialCapital: 25_000,
-    sector: 'Technology / Semiconductors',
+    sector: 'Semiconductors',
   },
   {
     symbol: 'AVGO',
@@ -814,9 +830,9 @@ export const ASSET_CATALOG: readonly AssetMetadata[] = [
     lotSize: 1,
     buyFeeBps: 2,
     sellFeeBps: 2,
-    defaultSlippageBps: 2,
+    defaultSlippageBps: 5,
     defaultInitialCapital: 25_000,
-    sector: 'Technology / Semiconductors',
+    sector: 'Semiconductors',
   },
   {
     symbol: 'NFLX',
@@ -829,9 +845,9 @@ export const ASSET_CATALOG: readonly AssetMetadata[] = [
     lotSize: 1,
     buyFeeBps: 2,
     sellFeeBps: 2,
-    defaultSlippageBps: 2,
+    defaultSlippageBps: 5,
     defaultInitialCapital: 25_000,
-    sector: 'Communication Services / Entertainment',
+    sector: 'Entertainment & Streaming',
   },
   {
     symbol: 'PLTR',
@@ -844,9 +860,9 @@ export const ASSET_CATALOG: readonly AssetMetadata[] = [
     lotSize: 1,
     buyFeeBps: 2,
     sellFeeBps: 2,
-    defaultSlippageBps: 2,
+    defaultSlippageBps: 5,
     defaultInitialCapital: 25_000,
-    sector: 'Technology / Enterprise AI',
+    sector: 'Enterprise Software & AI',
   },
   {
     symbol: 'JPM',
@@ -859,7 +875,7 @@ export const ASSET_CATALOG: readonly AssetMetadata[] = [
     lotSize: 1,
     buyFeeBps: 2,
     sellFeeBps: 2,
-    defaultSlippageBps: 2,
+    defaultSlippageBps: 5,
     defaultInitialCapital: 25_000,
     sector: 'Financials / Banking',
   },
@@ -874,7 +890,7 @@ export const ASSET_CATALOG: readonly AssetMetadata[] = [
     lotSize: 1,
     buyFeeBps: 2,
     sellFeeBps: 2,
-    defaultSlippageBps: 2,
+    defaultSlippageBps: 5,
     defaultInitialCapital: 25_000,
     sector: 'Financials / Payments',
   },
@@ -889,7 +905,7 @@ export const ASSET_CATALOG: readonly AssetMetadata[] = [
     lotSize: 1,
     buyFeeBps: 2,
     sellFeeBps: 2,
-    defaultSlippageBps: 2,
+    defaultSlippageBps: 5,
     defaultInitialCapital: 25_000,
     sector: 'Financials / Conglomerate',
   },
@@ -904,7 +920,7 @@ export const ASSET_CATALOG: readonly AssetMetadata[] = [
     lotSize: 1,
     buyFeeBps: 2,
     sellFeeBps: 2,
-    defaultSlippageBps: 2,
+    defaultSlippageBps: 5,
     defaultInitialCapital: 25_000,
     sector: 'Energy / Oil & Gas',
   },
@@ -919,7 +935,7 @@ export const ASSET_CATALOG: readonly AssetMetadata[] = [
     lotSize: 1,
     buyFeeBps: 2,
     sellFeeBps: 2,
-    defaultSlippageBps: 2,
+    defaultSlippageBps: 5,
     defaultInitialCapital: 25_000,
     sector: 'Healthcare / Pharmaceuticals',
   },
@@ -934,39 +950,39 @@ export const ASSET_CATALOG: readonly AssetMetadata[] = [
     lotSize: 1,
     buyFeeBps: 2,
     sellFeeBps: 2,
-    defaultSlippageBps: 2,
+    defaultSlippageBps: 5,
     defaultInitialCapital: 25_000,
-    sector: 'ETF / Broad US Market',
+    sector: 'Index ETF / Large Cap Blend',
   },
   {
     symbol: 'QQQ',
     providerSymbol: 'QQQ',
     dataSource: 'YAHOO',
-    name: 'Invesco QQQ Trust (NASDAQ-100)',
+    name: 'Invesco QQQ Trust (Nasdaq 100)',
     assetClass: 'US_EQUITY',
     exchange: 'NASDAQ',
     currency: 'USD',
     lotSize: 1,
     buyFeeBps: 2,
     sellFeeBps: 2,
-    defaultSlippageBps: 2,
+    defaultSlippageBps: 5,
     defaultInitialCapital: 25_000,
-    sector: 'ETF / Tech & Growth',
+    sector: 'Index ETF / Tech Blend',
   },
   {
     symbol: 'GLD',
     providerSymbol: 'GLD',
     dataSource: 'YAHOO',
-    name: 'SPDR Gold Shares',
+    name: 'SPDR Gold Trust',
     assetClass: 'US_EQUITY',
     exchange: 'NYSE',
     currency: 'USD',
     lotSize: 1,
     buyFeeBps: 2,
     sellFeeBps: 2,
-    defaultSlippageBps: 2,
+    defaultSlippageBps: 5,
     defaultInitialCapital: 25_000,
-    sector: 'ETF / Precious Metals',
+    sector: 'Commodity ETF / Gold',
   },
   {
     symbol: 'IWM',
@@ -979,34 +995,20 @@ export const ASSET_CATALOG: readonly AssetMetadata[] = [
     lotSize: 1,
     buyFeeBps: 2,
     sellFeeBps: 2,
-    defaultSlippageBps: 2,
+    defaultSlippageBps: 5,
     defaultInitialCapital: 25_000,
-    sector: 'ETF / US Small Cap',
+    sector: 'Index ETF / Small Cap',
   },
 
-  // ==========================================
-  // 3. 8 Liquid Crypto Assets
-  // ==========================================
-  {
-    symbol: 'HNTUSDTPERP',
-    providerSymbol: 'HNTUSDT',
-    dataSource: 'BINANCE',
-    name: 'Helium (HNT / USDT)',
-    assetClass: 'CRYPTO',
-    exchange: 'BINANCE',
-    currency: 'USD',
-    lotSize: 0.001,
-    buyFeeBps: 5,
-    sellFeeBps: 5,
-    defaultSlippageBps: 5,
-    defaultInitialCapital: 10_000,
-    sector: 'Crypto / DePIN & IoT',
-  },
+  // =========================================================================
+  // 3. Liquid Crypto Assets (8 Assets)
+  // =========================================================================
+  HNT_PERP_METADATA,
   {
     symbol: 'BTCUSDT',
     providerSymbol: 'BTCUSDT',
     dataSource: 'BINANCE',
-    name: 'Bitcoin (BTC / USDT)',
+    name: 'Bitcoin / Tether Spot',
     assetClass: 'CRYPTO',
     exchange: 'BINANCE',
     currency: 'USD',
@@ -1015,13 +1017,13 @@ export const ASSET_CATALOG: readonly AssetMetadata[] = [
     sellFeeBps: 5,
     defaultSlippageBps: 5,
     defaultInitialCapital: 10_000,
-    sector: 'Crypto / Store of Value',
+    sector: 'Layer 1 / Store of Value',
   },
   {
     symbol: 'ETHUSDT',
     providerSymbol: 'ETHUSDT',
     dataSource: 'BINANCE',
-    name: 'Ethereum (ETH / USDT)',
+    name: 'Ethereum / Tether Spot',
     assetClass: 'CRYPTO',
     exchange: 'BINANCE',
     currency: 'USD',
@@ -1030,13 +1032,13 @@ export const ASSET_CATALOG: readonly AssetMetadata[] = [
     sellFeeBps: 5,
     defaultSlippageBps: 5,
     defaultInitialCapital: 10_000,
-    sector: 'Crypto / Layer 1 Smart Contracts',
+    sector: 'Smart Contract Platform',
   },
   {
     symbol: 'SOLUSDT',
     providerSymbol: 'SOLUSDT',
     dataSource: 'BINANCE',
-    name: 'Solana (SOL / USDT)',
+    name: 'Solana / Tether Spot',
     assetClass: 'CRYPTO',
     exchange: 'BINANCE',
     currency: 'USD',
@@ -1045,13 +1047,13 @@ export const ASSET_CATALOG: readonly AssetMetadata[] = [
     sellFeeBps: 5,
     defaultSlippageBps: 5,
     defaultInitialCapital: 10_000,
-    sector: 'Crypto / High-Speed Layer 1',
+    sector: 'High-Throughput L1',
   },
   {
     symbol: 'BNBUSDT',
     providerSymbol: 'BNBUSDT',
     dataSource: 'BINANCE',
-    name: 'BNB (BNB / USDT)',
+    name: 'BNB / Tether Spot',
     assetClass: 'CRYPTO',
     exchange: 'BINANCE',
     currency: 'USD',
@@ -1060,13 +1062,13 @@ export const ASSET_CATALOG: readonly AssetMetadata[] = [
     sellFeeBps: 5,
     defaultSlippageBps: 5,
     defaultInitialCapital: 10_000,
-    sector: 'Crypto / Exchange Ecosystem',
+    sector: 'Exchange Ecosystem L1',
   },
   {
     symbol: 'XRPUSDT',
     providerSymbol: 'XRPUSDT',
     dataSource: 'BINANCE',
-    name: 'XRP (XRP / USDT)',
+    name: 'XRP / Tether Spot',
     assetClass: 'CRYPTO',
     exchange: 'BINANCE',
     currency: 'USD',
@@ -1075,13 +1077,13 @@ export const ASSET_CATALOG: readonly AssetMetadata[] = [
     sellFeeBps: 5,
     defaultSlippageBps: 5,
     defaultInitialCapital: 10_000,
-    sector: 'Crypto / Cross-Border Payments',
+    sector: 'Cross-Border Payments',
   },
   {
     symbol: 'DOGEUSDT',
     providerSymbol: 'DOGEUSDT',
     dataSource: 'BINANCE',
-    name: 'Dogecoin (DOGE / USDT)',
+    name: 'Dogecoin / Tether Spot',
     assetClass: 'CRYPTO',
     exchange: 'BINANCE',
     currency: 'USD',
@@ -1090,13 +1092,13 @@ export const ASSET_CATALOG: readonly AssetMetadata[] = [
     sellFeeBps: 5,
     defaultSlippageBps: 5,
     defaultInitialCapital: 10_000,
-    sector: 'Crypto / Payments & Memes',
+    sector: 'Meme / Layer 1',
   },
   {
     symbol: 'AVAXUSDT',
     providerSymbol: 'AVAXUSDT',
     dataSource: 'BINANCE',
-    name: 'Avalanche (AVAX / USDT)',
+    name: 'Avalanche / Tether Spot',
     assetClass: 'CRYPTO',
     exchange: 'BINANCE',
     currency: 'USD',
@@ -1105,30 +1107,21 @@ export const ASSET_CATALOG: readonly AssetMetadata[] = [
     sellFeeBps: 5,
     defaultSlippageBps: 5,
     defaultInitialCapital: 10_000,
-    sector: 'Crypto / Modular Layer 1',
+    sector: 'Smart Contract Platform',
   },
 ];
 
-const DEFAULT_ASSET: AssetMetadata = ASSET_CATALOG[65] ?? {
-  symbol: 'HNTUSDTPERP',
-  providerSymbol: 'HNTUSDT',
-  dataSource: 'BINANCE',
-  name: 'Helium (HNT / USDT)',
-  assetClass: 'CRYPTO',
-  exchange: 'BINANCE',
-  currency: 'USD',
-  lotSize: 0.001,
-  buyFeeBps: 5,
-  sellFeeBps: 5,
-  defaultSlippageBps: 5,
-  defaultInitialCapital: 10_000,
-  sector: 'Crypto / DePIN & IoT',
-};
-
+/**
+ * Returns metadata for the given asset symbol or providerSymbol.
+ * Defaults to HNTUSDTPERP if the symbol is not recognized in the catalog.
+ */
 export function getAssetBySymbol(symbol: string): AssetMetadata {
-  const normalized = symbol.toUpperCase().trim();
-  const match = ASSET_CATALOG.find(
-    (a) => a.symbol.toUpperCase() === normalized || a.providerSymbol.toUpperCase() === normalized
+  const normalized = symbol.trim().toUpperCase();
+  const found = ASSET_CATALOG.find(
+    (asset) =>
+      asset.symbol.toUpperCase() === normalized ||
+      asset.providerSymbol.toUpperCase() === normalized
   );
-  return match ?? DEFAULT_ASSET;
+
+  return found ?? HNT_PERP_METADATA;
 }
