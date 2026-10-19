@@ -2,7 +2,10 @@ import type { BacktestApiResponse, BacktestConfig } from '../../shared/types/bac
 import type { AssetMetadata } from '../../shared/types/market';
 import type { StrategyMetadataSummary } from '../../shared/strategies/registry';
 
-const BASE_URL = '/api/projects/backtester';
+const BASE_URL =
+  typeof window !== 'undefined' && window.location.pathname.includes('/projects/backtester')
+    ? '/projects/backtester/api/projects/backtester'
+    : '/api/projects/backtester';
 
 export async function fetchBacktestResult(
   config: BacktestConfig
