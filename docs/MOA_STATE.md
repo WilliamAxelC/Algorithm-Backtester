@@ -1,22 +1,16 @@
 # MOA Live Phase State Tracker
 
-**Architecture Specification:** `docs/ARCHITECTURE.md`
-**Project:** Real-Market 10Y Pre-Rendered Quantitative Backtester (`wyckoff-quant-v3`)
+**Architecture Specification:** `docs/ARCHITECTURE_V3_1_FIX.md`
+**Project:** wyckoff-quant-v3.1 (1s Real-Time 1D Stream, GMT+7 WIB Timezone & Structural VSA Wyckoff Engine)
+
+## Remediation Phases (v3.1)
 
 | Phase | Description | Branch | Status | Verification Command | Exit Code |
 |---|---|---|---|---|---|
-| Phase 1 | Disk Persistence, Project Scaffolding & Build Configuration | `feat/phase-1-scaffolding` | COMPLETED | `npm install` | 0 |
-| Phase 2 | Shared Types, Full 73-Asset Catalog & Indicator/Formatter Utilities | `feat/phase-2-catalog-and-types` | COMPLETED | `npx tsc --noEmit` | 0 |
-| Phase 3 | Dual-Resolution Backtest Engine & Self-Calibrating Strategies | `feat/phase-3-engine-and-strategies` | COMPLETED | `npx tsc --noEmit` | 0 |
-| Phase 4 | Real-Market Historical Fetchers, Disk Cache & Live 1s Stream Server | `feat/phase-4-server-and-fetchers` | COMPLETED | `npx tsc --noEmit` | 0 |
-| Phase 5 | Unit & Integration Verification Suite | `feat/phase-5-tests` | COMPLETED | `npx vitest run` | 0 |
-| Phase 6 | Streamlined Swiss Light-Mode UI Controls & Live 1s Ticker | `feat/phase-6-ui-controls` | COMPLETED | `npx tsc --noEmit` | 0 |
-| Phase 7 | Multi-Resolution Chart Canvas, 10Y Ledger Tabs & App Assembly | `feat/phase-7-chart-and-app` | COMPLETED | `npm run build && npx vitest run` | 0 |
-| Phase 8 | 10Y Real Market Data Seeding & Safe Mini PC Deployment | `feat/phase-8-safe-deployment` | COMPLETED | `bash deploy/safe-deploy.sh` | 0 |
+| Phase 1 | Enforce GMT+7 (WIB) Timezone Across Formatters & Chart Utilities | `fix/phase-1-wib-timezone` | PENDING | `npx tsc --noEmit` | - |
+| Phase 2 | Unbuffered 1-Second Live Tick Stream & 1D Intraday Fetcher Fix | `fix/phase-2-1s-live-stream` | PENDING | `npx tsc --noEmit` | - |
+| Phase 3 | Structural VSA Wyckoff Accumulation Schematics #1 & #2 Engine Overhaul | `fix/phase-3-wyckoff-vsa-engine` | PENDING | `npx vitest run` | - |
+| Phase 4 | Real-Time 1s Chart Candle Updates & GMT+7 WIB UI Wiring | `fix/phase-4-chart-wib-and-1s-ui` | PENDING | `npm run build && npx vitest run` | - |
+| Phase 5 | Re-Precompute 10Y Cache & Safe Zero-Downtime Redeployment | `fix/phase-5-redeploy` | PENDING | `bash deploy/safe-deploy.sh` | - |
 
-**Status:** ALL PHASES COMPLETED (Production Ready)
-- **Local Service:** `http://127.0.0.1:4175/projects/backtester/`
-- **Reverse Proxy:** `http://10.20.20.178:4175` via `projects-cuang-nginx`
-- **Public Tunnel:** `https://cuang.dev/projects/backtester/`
-- **Verification:** All 8 atomic sub-agent phases verified with exit code 0.
-
+**Current Active Phase:** Phase 1 (Starting)
