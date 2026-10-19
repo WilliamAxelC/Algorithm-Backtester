@@ -26,16 +26,19 @@ export class LiveTickerHub {
     const subscriber: ClientSubscriber = { res, symbol };
     this.clients.add(subscriber);
 
-    // Write SSE headers
+    // Write anti-buffering SSE headers for Cloudflare tunnel & reverse proxies
     res.writeHead(200, {
-      'Content-Type': 'text/event-stream',
-      'Cache-Control': 'no-cache, no-transform',
+      'Content-Type': 'text/event-stream; charset=utf-8',
+      'Cache-Control': 'no-cache, no-store, no-transform, must-revalidate',
       'Connection': 'keep-alive',
       'X-Accel-Buffering': 'no',
       'Access-Control-Allow-Origin': '*',
     });
 
-    res.write(': connected\n\n');
+    res.socket?.setNoDelay(true);
+
+    // Flush Cloudflare Tunnel / reverse proxy buffer immediately with 2KB comment padding:
+    res.write(`:${' '.repeat(2048)}\n\n`);
 
     // Send immediate initial tick if available
     const asset = getAssetBySymbol(symbol);
@@ -87,7 +90,7 @@ export class LiveTickerHub {
   }
 
   private connectBinanceWs(symbol: string, providerSymbol: string): void {
-    const wsUrl = `wss://stream.binance.com:9443/ws/${providerSymbol}@miniTicker`;
+    const wsUrl = `wss://stream.binance.com:9443/ws/${providerSymbol}@aggTrade`;
     let ws: WebSocket;
 
     try {
@@ -101,21 +104,24 @@ export class LiveTickerHub {
     ws.on('message', (data: WebSocket.RawData) => {
       try {
         const msg = JSON.parse(data.toString()) as {
-          s: string; // symbol
-          c: string; // close price
-          o: string; // open price
-          h: string; // high price
-          l: string; // low price
-          v: string; // total traded base asset volume
-          E: number; // Event time
+          e?: string; // event type "aggTrade"
+          E?: number; // event time
+          s?: string; // symbol
+          p?: string; // price
+          q?: string; // quantity
+          T?: number; // trade time
         };
 
-        const price = Number(msg.c) || 0;
-        const open = Number(msg.o) || price;
-        const high = Number(msg.h) || price;
-        const low = Number(msg.l) || price;
-        const volume = Number(msg.v) || 0;
+        const price = Number(msg.p) || 0;
+        if (price <= 0) return;
+
+        const prevTick = this.latestTicks.get(symbol);
+        const open = prevTick ? prevTick.open24h : price;
+        const high = prevTick ? Math.max(prevTick.high24h, price) : price;
+        const low = prevTick ? Math.min(prevTick.low24h, price) : price;
+        const volume = (prevTick ? prevTick.volume24h : 0) + (Number(msg.q) || 0);
         const changePct24h = open > 0 ? ((price - open) / open) * 100 : 0;
+        const tradeTimeMs = msg.T ?? msg.E ?? Date.now();
 
         const tick: LiveQuoteTick = {
           symbol,
@@ -125,7 +131,7 @@ export class LiveTickerHub {
           low24h: low,
           volume24h: volume,
           changePct24h,
-          timestampSec: Math.floor(msg.E / 1000),
+          timestampSec: Math.floor(tradeTimeMs / 1000),
           isDelayed: false,
           delayLabel: 'REALTIME_WS',
         };
@@ -153,7 +159,7 @@ export class LiveTickerHub {
   }
 
   private startYahooPoller(): void {
-    const pollIntervalMs = Number(process.env.YAHOO_POLL_INTERVAL_MS) || 2000;
+    const pollIntervalMs = Number(process.env.YAHOO_POLL_INTERVAL_MS) || 1500;
     this.yahooPollInterval = setInterval(async () => {
       // Collect unique symbols currently subscribed to by clients
       const activeSymbols = new Set<string>();
@@ -176,16 +182,23 @@ export class LiveTickerHub {
   }
 
   private startBroadcastLoop(): void {
-    // 1-second pulse to push ticks to connected SSE clients
+    // Guaranteed 1-second pulse to push ticks to connected SSE clients
     this.broadcastInterval = setInterval(() => {
       if (this.clients.size === 0) return;
+
+      const nowSec = Math.floor(Date.now() / 1000);
 
       for (const client of this.clients) {
         const asset = getAssetBySymbol(client.symbol);
         const tick = this.latestTicks.get(asset.symbol);
         if (tick) {
+          // Emit tick updated with current second timestamp so chart and clock advance every 1.0s
+          const currentTick: LiveQuoteTick = {
+            ...tick,
+            timestampSec: nowSec,
+          };
           try {
-            client.res.write(`data: ${JSON.stringify(tick)}\n\n`);
+            client.res.write(`data: ${JSON.stringify(currentTick)}\n\n`);
           } catch {
             this.clients.delete(client);
           }

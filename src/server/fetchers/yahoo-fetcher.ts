@@ -136,7 +136,7 @@ export async function fetchYahooLiveQuote(
   providerSymbol: string,
   symbol: string
 ): Promise<LiveQuoteTick> {
-  const url = `${YAHOO_BASE_URL}/${encodeURIComponent(providerSymbol)}?range=1d&interval=1m&includePrePost=false`;
+  const url = `${YAHOO_BASE_URL}/${encodeURIComponent(providerSymbol)}?range=1d&interval=1m&includePrePost=false&_cb=${Date.now()}`;
 
   try {
     const response = await fetch(url, {
