@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import {
+  BookOpen,
   Calendar,
   Download,
   FileText,
@@ -16,11 +17,23 @@ import type {
   ChartMarkerAnnotation,
 } from '../../shared/types/market';
 import {
+  GLOSSARY_CATEGORIES,
+  GLOSSARY_ITEMS,
+  type GlossaryCategory,
+} from '../../shared/catalog/glossary-data';
+import {
   formatCurrency,
   formatPrice,
   formatSignedPct,
   formatUnixDate,
 } from '../../shared/utils/formatters';
+
+export type TabId =
+  | 'EQUITY_CURVE'
+  | 'WYCKOFF_LOG'
+  | 'TRADE_LEDGER'
+  | 'MONTHLY_HEATMAP'
+  | 'GLOSSARY';
 
 interface BottomInspectorTabsProps {
   readonly asset: AssetMetadata;
@@ -28,10 +41,10 @@ interface BottomInspectorTabsProps {
   readonly trades: readonly TradeRecord[];
   readonly markers: readonly ChartMarkerAnnotation[];
   readonly monthlyReturns: readonly MonthlyReturnCell[];
+  readonly activeTab?: TabId;
+  readonly onTabChange?: (tab: TabId) => void;
   readonly onFocusTimestamp?: (time: number) => void;
 }
-
-type TabId = 'EQUITY_CURVE' | 'WYCKOFF_LOG' | 'TRADE_LEDGER' | 'MONTHLY_HEATMAP';
 
 const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
@@ -41,9 +54,23 @@ export const BottomInspectorTabs: React.FC<BottomInspectorTabsProps> = ({
   trades,
   markers,
   monthlyReturns,
+  activeTab: controlledActiveTab,
+  onTabChange,
   onFocusTimestamp,
 }) => {
-  const [activeTab, setActiveTab] = useState<TabId>('EQUITY_CURVE');
+  const [localTab, setLocalTab] = useState<TabId>('EQUITY_CURVE');
+  const activeTab = controlledActiveTab ?? localTab;
+
+  const handleTabClick = (tab: TabId) => {
+    if (onTabChange) {
+      onTabChange(tab);
+    } else {
+      setLocalTab(tab);
+    }
+  };
+
+  const [glossarySearch, setGlossarySearch] = useState<string>('');
+  const [selectedCategory, setSelectedCategory] = useState<GlossaryCategory | 'ALL'>('ALL');
 
   // CSV Export for Trade Ledger
   const handleExportCSV = () => {
@@ -112,6 +139,22 @@ export const BottomInspectorTabs: React.FC<BottomInspectorTabsProps> = ({
     return { years, yearsMap };
   }, [monthlyReturns]);
 
+  // Filtered glossary items based on category and search query
+  const filteredGlossary = useMemo(() => {
+    const query = glossarySearch.trim().toLowerCase();
+    return GLOSSARY_ITEMS.filter((item) => {
+      const matchesCategory = selectedCategory === 'ALL' || item.category === selectedCategory;
+      if (!matchesCategory) return false;
+      if (!query) return true;
+      return (
+        item.term.toLowerCase().includes(query) ||
+        item.fullName.toLowerCase().includes(query) ||
+        item.shortDefinition.toLowerCase().includes(query) ||
+        item.fullExplanation.toLowerCase().includes(query)
+      );
+    });
+  }, [glossarySearch, selectedCategory]);
+
   return (
     <div className="h-64 bg-white border-t border-slate-200 flex flex-col text-xs">
       {/* Tab Navigation Header */}
@@ -119,7 +162,7 @@ export const BottomInspectorTabs: React.FC<BottomInspectorTabsProps> = ({
         <div className="flex items-center gap-1">
           <button
             type="button"
-            onClick={() => setActiveTab('EQUITY_CURVE')}
+            onClick={() => handleTabClick('EQUITY_CURVE')}
             className={`px-3 py-2 font-mono text-[11px] font-semibold border-b-2 flex items-center gap-1.5 transition-colors ${
               activeTab === 'EQUITY_CURVE'
                 ? 'border-blue-600 text-blue-700 bg-white'
@@ -131,7 +174,7 @@ export const BottomInspectorTabs: React.FC<BottomInspectorTabsProps> = ({
           </button>
           <button
             type="button"
-            onClick={() => setActiveTab('WYCKOFF_LOG')}
+            onClick={() => handleTabClick('WYCKOFF_LOG')}
             className={`px-3 py-2 font-mono text-[11px] font-semibold border-b-2 flex items-center gap-1.5 transition-colors ${
               activeTab === 'WYCKOFF_LOG'
                 ? 'border-blue-600 text-blue-700 bg-white'
@@ -143,7 +186,7 @@ export const BottomInspectorTabs: React.FC<BottomInspectorTabsProps> = ({
           </button>
           <button
             type="button"
-            onClick={() => setActiveTab('TRADE_LEDGER')}
+            onClick={() => handleTabClick('TRADE_LEDGER')}
             className={`px-3 py-2 font-mono text-[11px] font-semibold border-b-2 flex items-center gap-1.5 transition-colors ${
               activeTab === 'TRADE_LEDGER'
                 ? 'border-blue-600 text-blue-700 bg-white'
@@ -155,7 +198,7 @@ export const BottomInspectorTabs: React.FC<BottomInspectorTabsProps> = ({
           </button>
           <button
             type="button"
-            onClick={() => setActiveTab('MONTHLY_HEATMAP')}
+            onClick={() => handleTabClick('MONTHLY_HEATMAP')}
             className={`px-3 py-2 font-mono text-[11px] font-semibold border-b-2 flex items-center gap-1.5 transition-colors ${
               activeTab === 'MONTHLY_HEATMAP'
                 ? 'border-blue-600 text-blue-700 bg-white'
@@ -164,6 +207,18 @@ export const BottomInspectorTabs: React.FC<BottomInspectorTabsProps> = ({
           >
             <Calendar className="w-3.5 h-3.5" />
             10Y Monthly Return Heatmap
+          </button>
+          <button
+            type="button"
+            onClick={() => handleTabClick('GLOSSARY')}
+            className={`px-3 py-2 font-mono text-[11px] font-semibold border-b-2 flex items-center gap-1.5 transition-colors ${
+              activeTab === 'GLOSSARY'
+                ? 'border-blue-600 text-blue-700 bg-white'
+                : 'border-transparent text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            <BookOpen className="w-3.5 h-3.5" />
+            Glossary & Abbreviations ({GLOSSARY_ITEMS.length})
           </button>
         </div>
 
@@ -452,6 +507,119 @@ export const BottomInspectorTabs: React.FC<BottomInspectorTabsProps> = ({
                 </tbody>
               </table>
             )}
+          </div>
+        )}
+
+        {/* TAB 5: Quantitative & Wyckoff Glossary */}
+        {activeTab === 'GLOSSARY' && (
+          <div className="h-full flex flex-col overflow-hidden">
+            {/* Filter and Search Bar */}
+            <div className="flex flex-wrap items-center justify-between gap-2 pb-2.5 mb-2.5 border-b border-slate-200">
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <button
+                  type="button"
+                  onClick={() => setSelectedCategory('ALL')}
+                  className={`px-2 py-0.5 rounded text-[10px] font-mono transition-colors ${
+                    selectedCategory === 'ALL'
+                      ? 'bg-blue-600 text-white font-semibold'
+                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                  }`}
+                >
+                  All ({GLOSSARY_ITEMS.length})
+                </button>
+                {GLOSSARY_CATEGORIES.map((cat) => {
+                  const count = GLOSSARY_ITEMS.filter((i) => i.category === cat.id).length;
+                  return (
+                    <button
+                      key={cat.id}
+                      type="button"
+                      onClick={() => setSelectedCategory(cat.id)}
+                      className={`px-2 py-0.5 rounded text-[10px] font-mono transition-colors ${
+                        selectedCategory === cat.id
+                          ? 'bg-blue-600 text-white font-semibold'
+                          : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                      }`}
+                    >
+                      {cat.label} ({count})
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className="relative">
+                <input
+                  type="text"
+                  value={glossarySearch}
+                  onChange={(e) => setGlossarySearch(e.target.value)}
+                  placeholder="Filter abbreviations (e.g. TR, SC, MDD, Sharpe)..."
+                  className="w-72 pl-2 pr-6 py-1 text-[11px] font-mono bg-slate-50 border border-slate-200 rounded text-slate-800 placeholder-slate-400 focus:outline-none focus:border-blue-500"
+                />
+                {glossarySearch && (
+                  <button
+                    type="button"
+                    onClick={() => setGlossarySearch('')}
+                    className="absolute right-2 top-1 text-slate-400 hover:text-slate-600 text-xs"
+                  >
+                    ×
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Scrollable Grid of Abbreviations */}
+            <div className="flex-1 overflow-y-auto pr-1">
+              {filteredGlossary.length === 0 ? (
+                <div className="py-8 text-center text-slate-400 font-mono">
+                  No abbreviations found matching "{glossarySearch}"
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2.5">
+                  {filteredGlossary.map((item) => (
+                    <div
+                      key={item.id}
+                      className="p-2.5 rounded border border-slate-200 bg-white hover:border-slate-300 transition-colors flex flex-col justify-between"
+                    >
+                      <div>
+                        <div className="flex items-center justify-between gap-1 mb-1">
+                          <span className="font-mono font-bold text-xs text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-100">
+                            {item.term}
+                          </span>
+                          <span
+                            className={`text-[9px] font-mono px-1.5 py-0.5 rounded uppercase tracking-wider ${
+                              item.category === 'WYCKOFF'
+                                ? 'bg-purple-50 text-purple-700 border border-purple-100'
+                                : item.category === 'METRICS'
+                                ? 'bg-teal-50 text-teal-700 border border-teal-100'
+                                : item.category === 'EXECUTION'
+                                ? 'bg-amber-50 text-amber-700 border border-amber-100'
+                                : 'bg-slate-100 text-slate-700 border border-slate-200'
+                            }`}
+                          >
+                            {item.categoryLabel}
+                          </span>
+                        </div>
+                        <div className="font-semibold text-slate-800 text-[11px] mb-1">
+                          {item.fullName}
+                        </div>
+                        <p className="text-slate-600 text-[11px] leading-relaxed mb-1.5">
+                          {item.shortDefinition}
+                        </p>
+                        <p className="text-slate-500 text-[10px] leading-normal">
+                          {item.fullExplanation}
+                        </p>
+                      </div>
+
+                      {item.formulaOrRule && (
+                        <div className="mt-2 pt-1.5 border-t border-slate-100 font-mono text-[10px] text-slate-700 bg-slate-50 px-1.5 py-1 rounded">
+                          <span className="text-slate-400 font-semibold mr-1">Rule/Formula:</span>
+                          <span className="text-blue-700">{item.formulaOrRule}</span>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         )}
       </div>

@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { TopControlBar } from './TopControlBar';
 import { MetricsAndAlphaStrip } from './MetricsAndAlphaStrip';
 import { PriceChartPane } from './PriceChartPane';
-import { BottomInspectorTabs } from './BottomInspectorTabs';
+import { BottomInspectorTabs, type TabId } from './BottomInspectorTabs';
 import { AssetPickerModal } from './AssetPickerModal';
 import { fetchBacktestResult, fetchCatalog } from '../services/api-client';
 import { subscribeToLiveTicker } from '../services/live-stream-client';
@@ -31,6 +31,7 @@ export const App: React.FC = () => {
   const [liveTick, setLiveTick] = useState<LiveQuoteTick | null>(null);
   const [isAssetModalOpen, setIsAssetModalOpen] = useState<boolean>(false);
   const [isComputing, setIsComputing] = useState<boolean>(false);
+  const [activeInspectorTab, setActiveInspectorTab] = useState<TabId>('EQUITY_CURVE');
 
   // Available strategies metadata
   const [availableStrategies, setAvailableStrategies] = useState(
@@ -125,6 +126,7 @@ export const App: React.FC = () => {
         }}
         onSelectRiskPosture={(posture) => setRiskPosture(posture)}
         onSelectInitialCapital={(amt) => setInitialCapital(amt)}
+        onOpenGlossary={() => setActiveInspectorTab('GLOSSARY')}
       />
 
       {/* 2. 8-Card Quantitative KPI & Alpha Strip */}
@@ -148,13 +150,15 @@ export const App: React.FC = () => {
         liveTick={liveTick}
       />
 
-      {/* 4. Bottom 4-Tab Inspector Ledger */}
+      {/* 4. Bottom 5-Tab Inspector Ledger with Glossary */}
       <BottomInspectorTabs
         asset={asset}
         equityCurve={backtestData?.equityCurve ?? []}
         trades={backtestData?.trades ?? []}
         markers={backtestData?.markers ?? []}
         monthlyReturns={backtestData?.monthlyReturns ?? []}
+        activeTab={activeInspectorTab}
+        onTabChange={setActiveInspectorTab}
       />
 
       {/* 5. 73-Asset Searchable Modal */}

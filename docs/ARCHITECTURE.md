@@ -538,3 +538,9 @@ export interface BacktestApiResponse {
 | Phase 6 | Streamlined Swiss Light-Mode UI Controls & Live 1s Ticker | `feat/phase-6-ui-controls` | `npx tsc --noEmit` | 0 |
 | Phase 7 | Multi-Resolution Chart Canvas, 10Y Ledger Tabs & App Assembly | `feat/phase-7-chart-and-app` | `npm run build && npx vitest run` | 0 |
 | Phase 8 | 10Y Real Market Data Seeding & Safe Mini PC Deployment | `feat/phase-8-safe-deployment` | `bash deploy/safe-deploy.sh` | 0 |
+
+---
+
+## 7. Reference Documentation & Glossaries
+* **Comprehensive Quantitative & Wyckoff Glossary:** [`docs/GLOSSARY.md`](GLOSSARY.md) — Exhaustive catalog of all Wyckoff phases (TR, PS, SC, AR, ST, UA, Spring, Test, SOS, LPS, BU/JAC), performance metrics (CAGR, MDD, Sharpe, Sortino, Calmar, Alpha, Beta, PF, Win Rate), execution parameters, and market microstructure terms.
+

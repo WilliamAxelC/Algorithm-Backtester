@@ -66,7 +66,10 @@ export const MetricsAndAlphaStrip: React.FC<MetricsAndAlphaStripProps> = ({
   return (
     <section aria-label="Strategy Performance Metrics" className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-px bg-slate-200 border-b border-slate-200 text-xs">
       {/* 1. Strategy Total Return */}
-      <div className="bg-white p-3 flex flex-col justify-between">
+      <div
+        title="Strategy Return: Cumulative net return of the algorithmic strategy after all fees and lot sizes"
+        className="bg-white p-3 flex flex-col justify-between"
+      >
         <div className="text-[10px] font-mono text-slate-500 uppercase flex items-center justify-between">
           <span>Strategy Return</span>
           <TrendingUp className="w-3 h-3 text-slate-400" />
@@ -91,7 +94,10 @@ export const MetricsAndAlphaStrip: React.FC<MetricsAndAlphaStripProps> = ({
       </div>
 
       {/* 2. Buy & Hold Benchmark Return */}
-      <div className="bg-white p-3 flex flex-col justify-between">
+      <div
+        title="Buy & Hold: Passive return if 100% capital bought on day 1 and held without trading"
+        className="bg-white p-3 flex flex-col justify-between"
+      >
         <div className="text-[10px] font-mono text-slate-500 uppercase flex items-center justify-between">
           <span>Buy & Hold</span>
           <PieChart className="w-3 h-3 text-slate-400" />
@@ -113,6 +119,7 @@ export const MetricsAndAlphaStrip: React.FC<MetricsAndAlphaStripProps> = ({
 
       {/* 3. Net Alpha vs Market */}
       <div
+        title="Net Alpha (α): Strategy Net Return minus Buy & Hold Return. Quantifies active edge over passive holding"
         className={`p-3 flex flex-col justify-between transition-colors ${
           isAlphaPositive ? 'bg-teal-50/50' : 'bg-rose-50/50'
         }`}
@@ -138,7 +145,10 @@ export const MetricsAndAlphaStrip: React.FC<MetricsAndAlphaStripProps> = ({
       </div>
 
       {/* 4. Final Equity & Live Position */}
-      <div className="bg-white p-3 flex flex-col justify-between">
+      <div
+        title="Portfolio Equity: Total capital balance plus live unrealized PnL from active open positions"
+        className="bg-white p-3 flex flex-col justify-between"
+      >
         <div className="text-[10px] font-mono text-slate-500 uppercase flex items-center justify-between">
           <span>Portfolio Equity</span>
           <DollarSign className="w-3 h-3 text-slate-400" />
@@ -164,7 +174,10 @@ export const MetricsAndAlphaStrip: React.FC<MetricsAndAlphaStripProps> = ({
       </div>
 
       {/* 5. Win Rate & Closed Trades */}
-      <div className="bg-white p-3 flex flex-col justify-between">
+      <div
+        title="Win Rate: Percentage of completed trades with net profit > 0 after deducting exchange fees"
+        className="bg-white p-3 flex flex-col justify-between"
+      >
         <div className="text-[10px] font-mono text-slate-500 uppercase flex items-center justify-between">
           <span>Win Rate</span>
           <CheckCircle2 className="w-3 h-3 text-slate-400" />
@@ -180,7 +193,10 @@ export const MetricsAndAlphaStrip: React.FC<MetricsAndAlphaStripProps> = ({
       </div>
 
       {/* 6. Profit Factor & Expectancy */}
-      <div className="bg-white p-3 flex flex-col justify-between">
+      <div
+        title="Profit Factor (PF): Ratio of gross profits to gross losses (ΣWins / Σ|Losses|). Values >1.5 indicate high edge"
+        className="bg-white p-3 flex flex-col justify-between"
+      >
         <div className="text-[10px] font-mono text-slate-500 uppercase flex items-center justify-between">
           <span>Profit Factor</span>
           <Percent className="w-3 h-3 text-slate-400" />
@@ -196,7 +212,10 @@ export const MetricsAndAlphaStrip: React.FC<MetricsAndAlphaStripProps> = ({
       </div>
 
       {/* 7. Max Drawdown */}
-      <div className="bg-white p-3 flex flex-col justify-between">
+      <div
+        title="Max Drawdown (MDD): Peak-to-trough portfolio equity drop. Sharpe: Annualized return per unit of volatility"
+        className="bg-white p-3 flex flex-col justify-between"
+      >
         <div className="text-[10px] font-mono text-slate-500 uppercase flex items-center justify-between">
           <span>Max Drawdown</span>
           <TrendingDown className="w-3 h-3 text-rose-500" />
@@ -212,7 +231,10 @@ export const MetricsAndAlphaStrip: React.FC<MetricsAndAlphaStripProps> = ({
       </div>
 
       {/* 8. Microstructure & Sizing Specs */}
-      <div className="bg-white p-3 flex flex-col justify-between">
+      <div
+        title="Execution Specs: Native execution timeframe, visual chart resolution, lot sizing rules, and transaction fees"
+        className="bg-white p-3 flex flex-col justify-between"
+      >
         <div className="text-[10px] font-mono text-slate-500 uppercase flex items-center justify-between">
           <span>Execution Specs</span>
           <span className="w-2 h-2 rounded-full bg-teal-500" />

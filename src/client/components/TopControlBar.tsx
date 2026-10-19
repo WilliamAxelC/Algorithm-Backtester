@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import {
+  BookOpen,
   ChevronDown,
   Layers,
   Search,
@@ -36,6 +37,7 @@ interface TopControlBarProps {
   readonly onCustomDateChange: (start: string | null, end: string | null) => void;
   readonly onSelectRiskPosture: (posture: RiskPosture) => void;
   readonly onSelectInitialCapital: (amount: number) => void;
+  readonly onOpenGlossary?: () => void;
 }
 
 const PRESETS: readonly TimeRangePreset[] = [
@@ -66,6 +68,7 @@ export const TopControlBar: React.FC<TopControlBarProps> = ({
   onSelectTimeRange,
   onSelectRiskPosture,
   onSelectInitialCapital,
+  onOpenGlossary,
 }) => {
   const [pulseColor, setPulseColor] = useState<'up' | 'down' | null>(null);
   const [prevPrice, setPrevPrice] = useState<number | null>(null);
@@ -230,6 +233,18 @@ export const TopControlBar: React.FC<TopControlBarProps> = ({
             </option>
           ))}
         </select>
+
+        {onOpenGlossary && (
+          <button
+            type="button"
+            onClick={onOpenGlossary}
+            title="Wyckoff & Quantitative Abbreviations Glossary"
+            className="flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-mono text-slate-700 bg-white hover:bg-slate-100 hover:text-blue-700 border border-slate-200 rounded transition-colors shadow-none"
+          >
+            <BookOpen className="w-3.5 h-3.5 text-blue-600" />
+            <span>Glossary</span>
+          </button>
+        )}
 
         {isComputing && (
           <span className="flex items-center gap-1 text-[10px] text-blue-600 font-mono animate-pulse">
