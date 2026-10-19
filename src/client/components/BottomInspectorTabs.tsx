@@ -78,8 +78,8 @@ export const BottomInspectorTabs: React.FC<BottomInspectorTabsProps> = ({
 
     const headers = [
       'Trade ID',
-      'Entry Time (UTC)',
-      'Exit Time (UTC)',
+      'Entry Time (WIB / GMT+7)',
+      'Exit Time (WIB / GMT+7)',
       'Entry Price',
       'Exit Price',
       'Quantity',
@@ -304,7 +304,7 @@ export const BottomInspectorTabs: React.FC<BottomInspectorTabsProps> = ({
               <table className="w-full text-left font-mono text-[11px]">
                 <thead>
                   <tr className="border-b border-slate-200 text-slate-400 uppercase text-[10px]">
-                    <th className="py-1.5 px-2">Date (UTC)</th>
+                    <th className="py-1.5 px-2">Date (WIB / GMT+7)</th>
                     <th className="py-1.5 px-2">Phase</th>
                     <th className="py-1.5 px-2">Tag</th>
                     <th className="py-1.5 px-2">Price</th>
@@ -314,12 +314,12 @@ export const BottomInspectorTabs: React.FC<BottomInspectorTabsProps> = ({
                 <tbody className="divide-y divide-slate-100">
                   {markers.map((m, idx) => (
                     <tr
-                      key={idx}
-                      onClick={() => onFocusTimestamp?.(m.time)}
-                      className="hover:bg-slate-50 cursor-pointer transition-colors"
-                    >
-                      <td className="py-1.5 px-2 text-slate-600 whitespace-nowrap">
-                        {formatUnixDate(m.time)}
+                       key={idx}
+                       onClick={() => onFocusTimestamp?.(m.time)}
+                       className="hover:bg-slate-50 cursor-pointer transition-colors"
+                     >
+                      <td className="py-1.5 px-2 text-slate-600 whitespace-nowrap" title={formatUnixDate(m.time, true)}>
+                        {formatUnixDate(m.time, true)}
                       </td>
                       <td className="py-1.5 px-2 whitespace-nowrap">
                         <span className="px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 font-semibold">
@@ -358,8 +358,8 @@ export const BottomInspectorTabs: React.FC<BottomInspectorTabsProps> = ({
               <table className="w-full text-left font-mono text-[11px]">
                 <thead>
                   <tr className="border-b border-slate-200 text-slate-400 uppercase text-[10px]">
-                    <th className="py-1.5 px-2">Entry Date</th>
-                    <th className="py-1.5 px-2">Exit Date</th>
+                    <th className="py-1.5 px-2">Entry Date (WIB)</th>
+                    <th className="py-1.5 px-2">Exit Date (WIB)</th>
                     <th className="py-1.5 px-2">Entry Price</th>
                     <th className="py-1.5 px-2">Exit Price</th>
                     <th className="py-1.5 px-2">Size / Lots</th>
@@ -374,11 +374,11 @@ export const BottomInspectorTabs: React.FC<BottomInspectorTabsProps> = ({
                     const isWin = t.netPnl > 0;
                     return (
                       <tr key={t.id} className="hover:bg-slate-50 transition-colors">
-                        <td className="py-1.5 px-2 text-slate-600 whitespace-nowrap">
-                          {formatUnixDate(t.entryTime)}
+                        <td className="py-1.5 px-2 text-slate-600 whitespace-nowrap" title={formatUnixDate(t.entryTime, true)}>
+                          {formatUnixDate(t.entryTime, true)}
                         </td>
-                        <td className="py-1.5 px-2 text-slate-600 whitespace-nowrap">
-                          {formatUnixDate(t.exitTime)}
+                        <td className="py-1.5 px-2 text-slate-600 whitespace-nowrap" title={formatUnixDate(t.exitTime, true)}>
+                          {formatUnixDate(t.exitTime, true)}
                         </td>
                         <td className="py-1.5 px-2 tabular-nums">
                           {formatPrice(t.entryPrice, asset.currency)}

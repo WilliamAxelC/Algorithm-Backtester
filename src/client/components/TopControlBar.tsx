@@ -18,6 +18,7 @@ import {
   formatCurrency,
   formatPrice,
   formatSignedPct,
+  formatWibClock,
 } from '../../shared/utils/formatters';
 
 interface TopControlBarProps {
@@ -86,6 +87,15 @@ export const TopControlBar: React.FC<TopControlBarProps> = ({
       setPrevPrice(liveTick.price);
     }
   }, [liveTick, prevPrice]);
+
+  const [currentClockSec, setCurrentClockSec] = useState<number>(() => Math.floor(Date.now() / 1000));
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCurrentClockSec(Math.floor(Date.now() / 1000));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
 
   const capitalPresets = capitalPresetsForCurrency(asset.currency);
 
@@ -245,6 +255,14 @@ export const TopControlBar: React.FC<TopControlBarProps> = ({
             <span>Glossary</span>
           </button>
         )}
+
+        {/* Live Ticking WIB Clock */}
+        <div className="flex items-center gap-1.5 font-mono text-[11px] text-slate-700 bg-slate-50 border border-slate-200 px-2 py-1 rounded">
+          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+          <span className="tabular-nums font-semibold">
+            {formatWibClock(liveTick?.timestampSec ?? currentClockSec)}
+          </span>
+        </div>
 
         {isComputing && (
           <span className="flex items-center gap-1 text-[10px] text-blue-600 font-mono animate-pulse">
