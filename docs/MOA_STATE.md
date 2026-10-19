@@ -11,7 +11,7 @@
 | Phase 4 | Real-Market Historical Fetchers, Disk Cache & Live 1s Stream Server | `feat/phase-4-server-and-fetchers` | COMPLETED | `npx tsc --noEmit` | 0 |
 | Phase 5 | Unit & Integration Verification Suite | `feat/phase-5-tests` | COMPLETED | `npx vitest run` | 0 |
 | Phase 6 | Streamlined Swiss Light-Mode UI Controls & Live 1s Ticker | `feat/phase-6-ui-controls` | COMPLETED | `npx tsc --noEmit` | 0 |
-| Phase 7 | Multi-Resolution Chart Canvas, 10Y Ledger Tabs & App Assembly | `feat/phase-7-chart-and-app` | PENDING | `npm run build && npx vitest run` | - |
+| Phase 7 | Multi-Resolution Chart Canvas, 10Y Ledger Tabs & App Assembly | `feat/phase-7-chart-and-app` | COMPLETED | `npm run build && npx vitest run` | 0 |
 | Phase 8 | 10Y Real Market Data Seeding & Safe Mini PC Deployment | `feat/phase-8-safe-deployment` | PENDING | `bash deploy/safe-deploy.sh` | - |
 
-**Current Active Phase:** Phase 7 (Starting)
+**Current Active Phase:** Phase 8 (Starting)
